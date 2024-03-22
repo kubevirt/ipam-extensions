@@ -40,6 +40,7 @@ type testConfig struct {
 	inputVM            *virtv1.VirtualMachine
 	inputVMI           *virtv1.VirtualMachineInstance
 	inputNAD           *nadv1.NetworkAttachmentDefinition
+	existingIPAMClaim  *ipamclaimsapi.IPAMClaim
 	expectedError      error
 	expectedResponse   reconcile.Result
 	expectedIPAMClaims []ipamclaimsapi.IPAMClaimSpec
@@ -65,6 +66,7 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 		nadName   = "ns1/superdupernad"
 		namespace = "ns1"
 		vmName    = "vm1"
+		dummyUID  = "imastringpretentingtobeauid"
 	)
 
 	DescribeTable("reconcile behavior is as expected", func(config testConfig) {
@@ -85,6 +87,10 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 
 		if config.inputNAD != nil {
 			initialObjects = append(initialObjects, config.inputNAD)
+		}
+
+		if config.existingIPAMClaim != nil {
+			initialObjects = append(initialObjects, config.existingIPAMClaim)
 		}
 
 		ctrlOptions := controllerruntime.Options{
@@ -182,6 +188,46 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 						Kind:  "virtualmachines",
 					},
 					Code: 404,
+				},
+			},
+		}),
+		Entry("everything is OK but there's already an IPAMClaim with this name", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName),
+			inputNAD: dummyNAD(nadName),
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace: namespace,
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
+		}),
+
+		Entry("found an existing IPAMClaim for the same VM", testConfig{
+			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
+			inputVMI: dummyVMI(nadName),
+			inputNAD: dummyNAD(nadName),
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace: namespace,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: "v1",
+							Kind:       "virtualmachines",
+							Name:       "vm1",
+							UID:        dummyUID,
+						},
+					},
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedResponse: reconcile.Result{},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaimSpec{
+				{
+					Network: "doesitmatter?",
 				},
 			},
 		}),
@@ -299,8 +345,13 @@ func dummyNADWrongFormat(nadName string) *nadv1.NetworkAttachmentDefinition {
 
 func ipamClaimsSpecExtractor(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaimSpec {
 	ipamClaimsSpec := make([]ipamclaimsapi.IPAMClaimSpec, len(ipamClaims))
-	for _, ipamClaim := range ipamClaims {
-		ipamClaimsSpec = append(ipamClaimsSpec, ipamClaim.Spec)
+	for i := range ipamClaims {
+		ipamClaimsSpec[i] = ipamClaims[i].Spec
 	}
 	return ipamClaimsSpec
+}
+
+func decorateVMWithUID(uid string, vm *virtv1.VirtualMachine) *virtv1.VirtualMachine {
+	vm.UID = apitypes.UID(uid)
+	return vm
 }

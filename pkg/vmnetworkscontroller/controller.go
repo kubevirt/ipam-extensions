@@ -69,13 +69,6 @@ func (r *VirtualMachineReconciler) Reconcile(
 		return controllerruntime.Result{}, err
 	}
 
-	if len(vmi.OwnerReferences) != 1 {
-		return controllerruntime.Result{}, fmt.Errorf("unexpected owner references on the VMI: %v", vmi.OwnerReferences)
-	} else if vmi.OwnerReferences[0].UID != vm.UID {
-		return controllerruntime.Result{},
-			fmt.Errorf("VMI owner by a different VM with a different name: %v", vmi.OwnerReferences[0].UID)
-	}
-
 	vmiSpec := vm.Spec.Template.Spec
 	for _, net := range vmiSpec.Networks {
 		if net.Pod != nil {
@@ -131,7 +124,29 @@ func (r *VirtualMachineReconciler) Reconcile(
 
 				if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
 					if apierrors.IsAlreadyExists(err) {
-						continue
+						claimKey := apitypes.NamespacedName{
+							Namespace: vm.Namespace,
+							Name:      claimKey,
+						}
+
+						existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
+						if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
+							if apierrors.IsNotFound(err) {
+								// we assume it had already cleaned up in the few miliseconds it took to get here ...
+								// TODO does this make sense? ... It's pretty much just for completeness.
+								continue
+							} else if err != nil {
+								return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
+							}
+						}
+						if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == vm.UID {
+							r.Log.Info("found existing IPAMClaim belonging to this VM, nothing to do", "VM UID", vm.UID)
+							continue
+						} else {
+							err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
+							r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
+							return controllerruntime.Result{}, err
+						}
 					}
 					r.Log.Error(err, "failed to create the IPAMClaim")
 					return controllerruntime.Result{}, err
