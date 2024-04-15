@@ -19,6 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	virtv1 "kubevirt.io/api/core/v1"
@@ -48,6 +50,7 @@ type testConfig struct {
 
 var _ = Describe("vm IPAM controller", Serial, func() {
 	BeforeEach(func() {
+		log.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 		testEnv = &envtest.Environment{}
 		_, err := testEnv.Start()
 		Expect(err).NotTo(HaveOccurred())
