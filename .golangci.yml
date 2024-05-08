@@ -16,6 +16,9 @@ issues:
       linters:
         - dupl
         - lll
+    - linters:
+        - lll
+      source: "^// \\+kubebuilder"
 linters:
   disable-all: true
   enable:

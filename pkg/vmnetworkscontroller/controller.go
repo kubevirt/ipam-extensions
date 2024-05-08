@@ -2,7 +2,6 @@ package vmnetworkscontroller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -23,12 +22,9 @@ import (
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	virtv1 "kubevirt.io/api/core/v1"
-)
 
-type RelevantConfig struct {
-	Name               string `json:"name"`
-	AllowPersistentIPs bool   `json:"allowPersistentIPs,omitempty"`
-}
+	"github.com/maiqueb/kubevirt-ipam-claims/pkg/config"
+)
 
 // VirtualMachineReconciler reconciles a VirtualMachineInstance object
 type VirtualMachineReconciler struct {
@@ -97,8 +93,8 @@ func (r *VirtualMachineReconciler) Reconcile(
 				}
 			}
 
-			nadConfig := &RelevantConfig{}
-			if err := json.Unmarshal([]byte(nad.Spec.Config), nadConfig); err != nil {
+			nadConfig, err := config.NewConfig(nad.Spec.Config)
+			if err != nil {
 				r.Log.Error(err, "failed extracting the relevant NAD configuration", "NAD name", nadName)
 				return controllerruntime.Result{}, fmt.Errorf("failed to extract the relevant NAD information")
 			}
