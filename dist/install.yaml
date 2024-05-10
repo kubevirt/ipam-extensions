@@ -1,3 +1,4 @@
+
 ---
 apiVersion: v1
 kind: Namespace
@@ -253,6 +254,8 @@ spec:
           readOnly: true
       securityContext:
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: kubevirt-ipam-claims-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
