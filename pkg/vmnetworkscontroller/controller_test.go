@@ -235,46 +235,6 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			},
 		}),
 	)
-
-	// TODO: delete this test; it's duplicated in the table
-	XIt("", func() {
-		key := apitypes.NamespacedName{Namespace: "ns1", Name: "vm1"}
-
-		fakeClient := fake.NewClientBuilder().
-			WithScheme(scheme.Scheme).
-			WithObjects(
-				dummyVM(nadName),
-				dummyVMI(nadName),
-				dummyNAD(nadName),
-			)
-		ctrlOptions := controllerruntime.Options{
-			Scheme: scheme.Scheme,
-			NewClient: func(_ *rest.Config, _ client.Options) (client.Client, error) {
-				return fakeClient.Build(), nil
-			},
-		}
-
-		mgr, err := controllerruntime.NewManager(controllerruntime.GetConfigOrDie(), ctrlOptions)
-		Expect(err).NotTo(HaveOccurred())
-
-		reconcileMachine := NewVMReconciler(mgr)
-
-		Expect(
-			reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: key}),
-		).To(Equal(reconcile.Result{}))
-
-		ipamClaim := &ipamclaimsapi.IPAMClaim{}
-		claimKey := apitypes.NamespacedName{
-			Namespace: namespace,
-			Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
-		}
-		allRoundClient := mgr.GetClient()
-		Expect(allRoundClient.Get(context.Background(), claimKey, ipamClaim)).To(Succeed())
-		Expect(ipamClaim.Spec).To(
-			Equal(ipamclaimsapi.IPAMClaimSpec{
-				Network: "goodnet",
-			}))
-	})
 })
 
 func dummyVM(nadName string) *virtv1.VirtualMachine {

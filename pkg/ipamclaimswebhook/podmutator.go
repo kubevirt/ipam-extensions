@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -63,6 +64,8 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	if err := a.decoder.Decode(request, pod); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
+
+	log.Info("webhook handling event")
 	networkSelectionElements, err := netutils.ParsePodNetworkAnnotation(pod)
 	if err != nil {
 		var goodTypeOfError *v1.NoK8sNetworkError
@@ -71,11 +74,20 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		}
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to parse pod network selection elements"))
 	}
+
 	var (
 		hasChangedNetworkSelectionElements bool
 		podNetworkSelectionElements        = make([]v1.NetworkSelectionElement, 0, len(networkSelectionElements))
 	)
 	for _, networkSelectionElement := range networkSelectionElements {
+		nadName := types.NamespacedName{
+			Namespace: networkSelectionElement.Namespace,
+			Name:      networkSelectionElement.Name,
+		}.String()
+		log.Info(
+			"iterating network selection elements",
+			"NAD", nadName,
+		)
 		nadKey := types.NamespacedName{
 			Namespace: networkSelectionElement.Namespace,
 			Name:      networkSelectionElement.Name,
@@ -95,15 +107,22 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		}
 
 		if pluginConfig.AllowPersistentIPs {
+			log.Info(
+				"will request persistent IPs",
+				"NAD", nadName,
+				"network", pluginConfig.Name,
+			)
 			vmName, hasVMAnnotation := pod.Annotations["kubevirt.io/domain"]
 			if !hasVMAnnotation {
+				log.Info(
+					"does not have the kubevirt VM annotation",
+					"NAD", nadName,
+					"network", pluginConfig.Name,
+				)
 				return admission.Allowed("not a VM")
 			}
-			vmKey := types.NamespacedName{
-				Namespace: pod.Namespace,
-				Name:      vmName,
-			}
 
+			vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
 			vmi := &virtv1.VirtualMachineInstance{}
 			if err := a.Client.Get(context.Background(), vmKey, vmi); err != nil {
 				return admission.Errored(http.StatusInternalServerError, err)
@@ -112,12 +131,22 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 			vmiNets := vmiSecondaryNetworks(vmi)
 			networkName, foundNetworkName := vmiNets[nadKey.String()]
 			if !foundNetworkName {
-				log.V(5).Info("network name not found", "network name", networkName)
+				log.Info(
+					"network name not found",
+					"NAD", nadName,
+					"network", networkName,
+				)
 				podNetworkSelectionElements = append(podNetworkSelectionElements, *networkSelectionElement)
 				continue
 			}
 
 			networkSelectionElement.IPAMClaimReference = fmt.Sprintf("%s.%s", vmName, networkName)
+			log.Info(
+				"requesting claim",
+				"NAD", nadName,
+				"network", pluginConfig.Name,
+				"claim", networkSelectionElement.IPAMClaimReference,
+			)
 			podNetworkSelectionElements = append(podNetworkSelectionElements, *networkSelectionElement)
 			hasChangedNetworkSelectionElements = true
 			continue
@@ -156,7 +185,12 @@ func vmiSecondaryNetworks(vmi *virtv1.VirtualMachineInstance) map[string]string 
 		if network.Multus.Default {
 			continue
 		}
-		indexedSecondaryNetworks[network.Multus.NetworkName] = network.Name
+
+		nadName := network.Multus.NetworkName // NAD name must be formatted in <ns>/<name> format
+		if !strings.Contains(network.Multus.NetworkName, "/") {
+			nadName = fmt.Sprintf("%s/%s", vmi.Namespace, network.Multus.NetworkName)
+		}
+		indexedSecondaryNetworks[nadName] = network.Name
 	}
 
 	return indexedSecondaryNetworks
