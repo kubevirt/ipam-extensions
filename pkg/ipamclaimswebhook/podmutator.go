@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -156,7 +157,12 @@ func vmiSecondaryNetworks(vmi *virtv1.VirtualMachineInstance) map[string]string 
 		if network.Multus.Default {
 			continue
 		}
-		indexedSecondaryNetworks[network.Multus.NetworkName] = network.Name
+
+		nadName := network.Multus.NetworkName // NAD name must be formatted in <ns>/<name> format
+		if !strings.Contains(network.Multus.NetworkName, "/") {
+			nadName = fmt.Sprintf("%s/%s", vmi.Namespace, network.Multus.NetworkName)
+		}
+		indexedSecondaryNetworks[nadName] = network.Name
 	}
 
 	return indexedSecondaryNetworks
