@@ -37,7 +37,7 @@ type VirtualMachineReconciler struct {
 func NewVMReconciler(manager controllerruntime.Manager) *VirtualMachineReconciler {
 	return &VirtualMachineReconciler{
 		Client:  manager.GetClient(),
-		Log:     controllerruntime.Log.WithName("controllers").WithName("VirtualMachine"),
+		Log:     controllerruntime.Log.WithName("controllers").WithName("VirtualMachineInstance"),
 		Scheme:  manager.GetScheme(),
 		manager: manager,
 	}
@@ -47,25 +47,33 @@ func (r *VirtualMachineReconciler) Reconcile(
 	ctx context.Context,
 	request controllerruntime.Request,
 ) (controllerruntime.Result, error) {
-	vm := &virtv1.VirtualMachine{}
+	vmi := &virtv1.VirtualMachineInstance{}
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	err := r.Client.Get(ctx, request.NamespacedName, vm)
+	err := r.Client.Get(ctx, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
-		r.Log.Error(err, "Error retrieving VM")
-		// Error reading the object - requeue the request.
-		return controllerruntime.Result{}, err
-	}
-
-	vmi := &virtv1.VirtualMachineInstance{}
-	if err := r.Client.Get(ctx, request.NamespacedName, vmi); apierrors.IsNotFound(err) {
 		r.Log.Error(err, "Error retrieving VMI")
 		// Error reading the object - requeue the request.
 		return controllerruntime.Result{}, err
 	}
 
-	vmiSpec := vm.Spec.Template.Spec
+	var ownerInfo corev1.OwnerReference
+	vm := &virtv1.VirtualMachine{}
+	if err := r.Client.Get(ctx, request.NamespacedName, vm); apierrors.IsNotFound(err) {
+		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
+		ownerInfo = corev1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
+	} else if err == nil {
+		ownerInfo = corev1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
+	} else {
+		return controllerruntime.Result{}, fmt.Errorf(
+			"error to get VMI %q corresponding VM: %w",
+			request.NamespacedName,
+			err,
+		)
+	}
+
+	vmiSpec := vmi.Spec
 	for _, net := range vmiSpec.Networks {
 		if net.Pod != nil {
 			continue
@@ -73,7 +81,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 
 		if net.Multus != nil {
 			nadName := net.Multus.NetworkName
-			namespace := vm.Namespace
+			namespace := vmi.Namespace
 			namespaceAndName := strings.Split(nadName, "/")
 			if len(namespaceAndName) == 2 {
 				namespace = namespaceAndName[0]
@@ -100,19 +108,12 @@ func (r *VirtualMachineReconciler) Reconcile(
 			}
 
 			if nadConfig.AllowPersistentIPs {
-				claimKey := fmt.Sprintf("%s.%s", vm.Name, net.Name)
+				claimKey := fmt.Sprintf("%s.%s", vmi.Name, net.Name)
 				ipamClaim := &ipamclaimsapi.IPAMClaim{
 					ObjectMeta: controllerruntime.ObjectMeta{
-						Name:      claimKey,
-						Namespace: vm.Namespace,
-						OwnerReferences: []corev1.OwnerReference{
-							{
-								APIVersion: vm.APIVersion,
-								Kind:       vm.Kind,
-								Name:       vm.Name,
-								UID:        vm.UID,
-							},
-						},
+						Name:            claimKey,
+						Namespace:       vmi.Namespace,
+						OwnerReferences: []corev1.OwnerReference{ownerInfo},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{
 						Network: nadConfig.Name,
@@ -121,7 +122,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 				if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
 					if apierrors.IsAlreadyExists(err) {
 						claimKey := apitypes.NamespacedName{
-							Namespace: vm.Namespace,
+							Namespace: vmi.Namespace,
 							Name:      claimKey,
 						}
 
@@ -157,7 +158,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 // Setup sets up the controller with the Manager passed in the constructor.
 func (r *VirtualMachineReconciler) Setup() error {
 	return controllerruntime.NewControllerManagedBy(r.manager).
-		For(&virtv1.VirtualMachine{}).
+		For(&virtv1.VirtualMachineInstance{}).
 		WithEventFilter(onVMPredicates()).
 		Complete(r)
 }
