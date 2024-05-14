@@ -22,6 +22,17 @@ resources:
 patches:
 - path: manager_webhook_patch.yaml
 - path: webhookcainjection_patch.yaml
+- patch: |-
+    - op: add
+      path: /webhooks/0/objectSelector
+      value:
+        matchLabels:
+          kubevirt.io: virt-launcher
+  target:
+    kind: MutatingWebhookConfiguration
+    group: admissionregistration.k8s.io
+    version: v1
+    name: mutating-webhook-configuration
 
 replacements:
   - source: # Add cert-manager annotation to MutatingWebhookConfiguration

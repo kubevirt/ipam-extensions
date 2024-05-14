@@ -326,6 +326,9 @@ webhooks:
       path: /mutate-v1-pod
   failurePolicy: Fail
   name: ipam-claims.k8s.cni.cncf.io
+  objectSelector:
+    matchLabels:
+      kubevirt.io: virt-launcher
   rules:
   - apiGroups:
     - ""
