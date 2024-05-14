@@ -75,16 +75,16 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 	DescribeTable("reconcile behavior is as expected", func(config testConfig) {
 		var initialObjects []client.Object
 
-		var vmKey apitypes.NamespacedName
 		if config.inputVM != nil {
-			vmKey = apitypes.NamespacedName{
-				Namespace: config.inputVM.Namespace,
-				Name:      config.inputVM.Name,
-			}
 			initialObjects = append(initialObjects, config.inputVM)
 		}
 
+		var vmiKey apitypes.NamespacedName
 		if config.inputVMI != nil {
+			vmiKey = apitypes.NamespacedName{
+				Namespace: config.inputVMI.Namespace,
+				Name:      config.inputVMI.Name,
+			}
 			initialObjects = append(initialObjects, config.inputVMI)
 		}
 
@@ -111,18 +111,18 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 
 		reconcileMachine := NewVMReconciler(mgr)
 		if config.expectedError != nil {
-			_, err := reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmKey})
+			_, err := reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey})
 			Expect(err).To(MatchError(config.expectedError))
 		} else {
 			Expect(
-				reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmKey}),
+				reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey}),
 			).To(Equal(config.expectedResponse))
 		}
 
 		if len(config.expectedIPAMClaims) > 0 {
 			ipamClaimList := &ipamclaimsapi.IPAMClaimList{}
 			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, &client.ListOptions{
-				Namespace: config.inputVM.Namespace,
+				Namespace: config.inputVMI.Namespace,
 			})).To(Succeed())
 			Expect(ipamClaimsSpecExtractor(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
@@ -144,23 +144,6 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			inputNAD:      dummyNADWrongFormat(nadName),
 			expectedError: fmt.Errorf("failed to extract the relevant NAD information"),
 		}),
-		Entry("the associated VMI is not yet found", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputNAD: dummyNAD(nadName),
-			expectedError: &errors.StatusError{
-				ErrStatus: metav1.Status{
-					Status:  "Failure",
-					Message: "virtualmachineinstances.kubevirt.io \"vm1\" not found",
-					Reason:  "NotFound",
-					Details: &metav1.StatusDetails{
-						Name:  "vm1",
-						Group: "kubevirt.io",
-						Kind:  "virtualmachineinstances",
-					},
-					Code: 404,
-				},
-			},
-		}),
 		Entry("the associated VMI exists but points to a NAD that doesn't exist", testConfig{
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName),
@@ -178,17 +161,16 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 				},
 			},
 		}),
-
-		Entry("the VM does not exist on the datastore - it might have been deleted in the meantime", testConfig{
+		Entry("the VMI does not exist on the datastore - it might have been deleted in the meantime", testConfig{
 			expectedError: &errors.StatusError{
 				ErrStatus: metav1.Status{
 					Status:  "Failure",
-					Message: "virtualmachines.kubevirt.io \"\" not found", // we're not passing a VM, so it doesn't know its name
+					Message: "virtualmachineinstances.kubevirt.io \"\" not found", // no name printed since we're not passing a VMI
 					Reason:  "NotFound",
 					Details: &metav1.StatusDetails{
 						Name:  "",
 						Group: "kubevirt.io",
-						Kind:  "virtualmachines",
+						Kind:  "virtualmachineinstances",
 					},
 					Code: 404,
 				},
@@ -207,7 +189,6 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			},
 			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
-
 		Entry("found an existing IPAMClaim for the same VM", testConfig{
 			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
 			inputVMI: dummyVMI(nadName),
@@ -231,6 +212,16 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaimSpec{
 				{
 					Network: "doesitmatter?",
+				},
+			},
+		}),
+		Entry("a lonesome VMI (with no corresponding VM) is a valid migration use-case", testConfig{
+			inputVMI:         dummyVMI(nadName),
+			inputNAD:         dummyNAD(nadName),
+			expectedResponse: reconcile.Result{},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaimSpec{
+				{
+					Network: "goodnet",
 				},
 			},
 		}),
