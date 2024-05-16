@@ -51,9 +51,9 @@ func (r *VirtualMachineReconciler) Reconcile(
 ) (controllerruntime.Result, error) {
 	vmi := &virtv1.VirtualMachineInstance{}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	err := r.Client.Get(ctx, request.NamespacedName, vmi)
+	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
 		r.Log.Error(err, "Error retrieving VMI")
 		// Error reading the object - requeue the request.
@@ -62,7 +62,9 @@ func (r *VirtualMachineReconciler) Reconcile(
 
 	var ownerInfo metav1.OwnerReference
 	vm := &virtv1.VirtualMachine{}
-	if err := r.Client.Get(ctx, request.NamespacedName, vm); apierrors.IsNotFound(err) {
+	contextWithTimeout, cancel = context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); apierrors.IsNotFound(err) {
 		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
 		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
 	} else if err == nil {
@@ -75,84 +77,53 @@ func (r *VirtualMachineReconciler) Reconcile(
 		)
 	}
 
-	vmiSpec := vmi.Spec
-	for _, net := range vmiSpec.Networks {
-		if net.Pod != nil {
-			continue
+	vmiNetworks, err := r.vmiNetworksClaimingIPAM(ctx, vmi)
+	if err != nil {
+		return controllerruntime.Result{}, err
+	}
+
+	for logicalNetworkName, netConfigName := range vmiNetworks {
+		claimKey := fmt.Sprintf("%s.%s", vmi.Name, logicalNetworkName)
+		ipamClaim := &ipamclaimsapi.IPAMClaim{
+			ObjectMeta: controllerruntime.ObjectMeta{
+				Name:            claimKey,
+				Namespace:       vmi.Namespace,
+				OwnerReferences: []metav1.OwnerReference{ownerInfo},
+				Finalizers:      []string{kubevirtVMFinalizer},
+			},
+			Spec: ipamclaimsapi.IPAMClaimSpec{
+				Network: netConfigName,
+			},
 		}
 
-		if net.Multus != nil {
-			nadName := net.Multus.NetworkName
-			namespace := vmi.Namespace
-			namespaceAndName := strings.Split(nadName, "/")
-			if len(namespaceAndName) == 2 {
-				namespace = namespaceAndName[0]
-				nadName = namespaceAndName[1]
-			}
-
-			ctx, cancel := context.WithTimeout(ctx, time.Second)
-			defer cancel()
-			nad := &nadv1.NetworkAttachmentDefinition{}
-			if err := r.Client.Get(
-				ctx,
-				apitypes.NamespacedName{Namespace: namespace, Name: nadName},
-				nad,
-			); err != nil {
-				if apierrors.IsNotFound(err) {
-					return controllerruntime.Result{}, err
-				}
-			}
-
-			nadConfig, err := config.NewConfig(nad.Spec.Config)
-			if err != nil {
-				r.Log.Error(err, "failed extracting the relevant NAD configuration", "NAD name", nadName)
-				return controllerruntime.Result{}, fmt.Errorf("failed to extract the relevant NAD information")
-			}
-
-			if nadConfig.AllowPersistentIPs {
-				claimKey := fmt.Sprintf("%s.%s", vmi.Name, net.Name)
-				ipamClaim := &ipamclaimsapi.IPAMClaim{
-					ObjectMeta: controllerruntime.ObjectMeta{
-						Name:            claimKey,
-						Namespace:       vmi.Namespace,
-						OwnerReferences: []metav1.OwnerReference{ownerInfo},
-						Finalizers:      []string{kubevirtVMFinalizer},
-					},
-					Spec: ipamclaimsapi.IPAMClaimSpec{
-						Network: nadConfig.Name,
-					},
+		if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
+			if apierrors.IsAlreadyExists(err) {
+				claimKey := apitypes.NamespacedName{
+					Namespace: vmi.Namespace,
+					Name:      claimKey,
 				}
 
-				if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
-					if apierrors.IsAlreadyExists(err) {
-						claimKey := apitypes.NamespacedName{
-							Namespace: vmi.Namespace,
-							Name:      claimKey,
-						}
-
-						existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
-						if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
-							if apierrors.IsNotFound(err) {
-								// we assume it had already cleaned up in the few miliseconds it took to get here ...
-								// TODO does this make sense? ... It's pretty much just for completeness.
-								continue
-							} else if err != nil {
-								return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
-							}
-						}
-						if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == vm.UID {
-							r.Log.Info("found existing IPAMClaim belonging to this VM, nothing to do", "VM UID", vm.UID)
-							continue
-						} else {
-							err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
-							r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
-							return controllerruntime.Result{}, err
-						}
+				existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
+				if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
+					if apierrors.IsNotFound(err) {
+						// we assume it had already cleaned up in the few miliseconds it took to get here ...
+						// TODO does this make sense? ... It's pretty much just for completeness.
+						continue
+					} else if err != nil {
+						return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
 					}
-					r.Log.Error(err, "failed to create the IPAMClaim")
+				}
+				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == vm.UID {
+					r.Log.Info("found existing IPAMClaim belonging to this VM, nothing to do", "VM UID", vm.UID)
+					continue
+				} else {
+					err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
+					r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
 					return controllerruntime.Result{}, err
 				}
 			}
+			r.Log.Error(err, "failed to create the IPAMClaim")
+			return controllerruntime.Result{}, err
 		}
 	}
 
@@ -182,4 +153,50 @@ func onVMPredicates() predicate.Funcs {
 			return false
 		},
 	}
+}
+
+func (r *VirtualMachineReconciler) vmiNetworksClaimingIPAM(
+	ctx context.Context,
+	vmi *virtv1.VirtualMachineInstance,
+) (map[string]string, error) {
+	vmiNets := make(map[string]string)
+	for _, net := range vmi.Spec.Networks {
+		if net.Pod != nil {
+			continue
+		}
+
+		if net.Multus != nil {
+			nadName := net.Multus.NetworkName
+			namespace := vmi.Namespace
+			namespaceAndName := strings.Split(nadName, "/")
+			if len(namespaceAndName) == 2 {
+				namespace = namespaceAndName[0]
+				nadName = namespaceAndName[1]
+			}
+
+			contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			nad := &nadv1.NetworkAttachmentDefinition{}
+			if err := r.Client.Get(
+				contextWithTimeout,
+				apitypes.NamespacedName{Namespace: namespace, Name: nadName},
+				nad,
+			); err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil, err
+				}
+			}
+
+			nadConfig, err := config.NewConfig(nad.Spec.Config)
+			if err != nil {
+				r.Log.Error(err, "failed extracting the relevant NAD configuration", "NAD name", nadName)
+				return nil, fmt.Errorf("failed to extract the relevant NAD information")
+			}
+
+			if nadConfig.AllowPersistentIPs {
+				vmiNets[net.Name] = nadConfig.Name
+			}
+		}
+	}
+	return vmiNets, nil
 }
