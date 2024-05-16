@@ -26,6 +26,8 @@ import (
 	"github.com/maiqueb/kubevirt-ipam-claims/pkg/config"
 )
 
+const kubevirtVMFinalizer = "kubevirt.io/persistent-ipam"
+
 // VirtualMachineReconciler reconciles a VirtualMachineInstance object
 type VirtualMachineReconciler struct {
 	client.Client
@@ -114,10 +116,12 @@ func (r *VirtualMachineReconciler) Reconcile(
 						Name:            claimKey,
 						Namespace:       vmi.Namespace,
 						OwnerReferences: []metav1.OwnerReference{ownerInfo},
+						Finalizers:      []string{kubevirtVMFinalizer},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{
 						Network: nadConfig.Name,
-					}}
+					},
+				}
 
 				if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
 					if apierrors.IsAlreadyExists(err) {
