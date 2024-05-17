@@ -9,7 +9,7 @@ import (
 	"github.com/go-logr/logr"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	corev1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	apitypes "k8s.io/apimachinery/pkg/types"
 
@@ -58,13 +58,13 @@ func (r *VirtualMachineReconciler) Reconcile(
 		return controllerruntime.Result{}, err
 	}
 
-	var ownerInfo corev1.OwnerReference
+	var ownerInfo metav1.OwnerReference
 	vm := &virtv1.VirtualMachine{}
 	if err := r.Client.Get(ctx, request.NamespacedName, vm); apierrors.IsNotFound(err) {
 		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
-		ownerInfo = corev1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
+		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
 	} else if err == nil {
-		ownerInfo = corev1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
+		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
 	} else {
 		return controllerruntime.Result{}, fmt.Errorf(
 			"error to get VMI %q corresponding VM: %w",
@@ -113,7 +113,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 					ObjectMeta: controllerruntime.ObjectMeta{
 						Name:            claimKey,
 						Namespace:       vmi.Namespace,
-						OwnerReferences: []corev1.OwnerReference{ownerInfo},
+						OwnerReferences: []metav1.OwnerReference{ownerInfo},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{
 						Network: nadConfig.Name,
