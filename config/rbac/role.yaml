@@ -26,4 +26,4 @@ rules:
 - apiGroups: ["k8s.cni.cncf.io"]
   resources:
     - ipamclaims
-  verbs: [ "create" ]
+  verbs: [ "create", "update" ]

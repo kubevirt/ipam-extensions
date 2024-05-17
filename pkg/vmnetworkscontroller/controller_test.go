@@ -45,7 +45,7 @@ type testConfig struct {
 	existingIPAMClaim  *ipamclaimsapi.IPAMClaim
 	expectedError      error
 	expectedResponse   reconcile.Result
-	expectedIPAMClaims []ipamclaimsapi.IPAMClaimSpec
+	expectedIPAMClaims []ipamclaimsapi.IPAMClaim
 }
 
 var _ = Describe("vm IPAM controller", Serial, func() {
@@ -96,6 +96,14 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			initialObjects = append(initialObjects, config.existingIPAMClaim)
 		}
 
+		if vmiKey.Namespace == "" && vmiKey.Name == "" {
+			// must apply some default for the VMI DEL scenarios ...
+			vmiKey = apitypes.NamespacedName{
+				Namespace: namespace,
+				Name:      vmName,
+			}
+		}
+
 		ctrlOptions := controllerruntime.Options{
 			Scheme: scheme.Scheme,
 			NewClient: func(_ *rest.Config, _ client.Options) (client.Client, error) {
@@ -121,10 +129,9 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 
 		if len(config.expectedIPAMClaims) > 0 {
 			ipamClaimList := &ipamclaimsapi.IPAMClaimList{}
-			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, &client.ListOptions{
-				Namespace: config.inputVMI.Namespace,
-			})).To(Succeed())
-			Expect(ipamClaimsSpecExtractor(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
+
+			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, ownedByVMLabel(vmName))).To(Succeed())
+			Expect(ipamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
 	},
 		Entry("when the VM has an associated VMI pointing to an existing NAD", testConfig{
@@ -132,9 +139,16 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			inputVMI:         dummyVMI(nadName),
 			inputNAD:         dummyNAD(nadName),
 			expectedResponse: reconcile.Result{},
-			expectedIPAMClaims: []ipamclaimsapi.IPAMClaimSpec{
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
-					Network: "goodnet",
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            fmt.Sprintf("%s.%s", vmName, "randomnet"),
+						Namespace:       namespace,
+						Finalizers:      []string{kubevirtVMFinalizer},
+						Labels:          ownedByVMLabel(vmName),
+						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
 				},
 			},
 		}),
@@ -162,17 +176,27 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			},
 		}),
 		Entry("the VMI does not exist on the datastore - it might have been deleted in the meantime", testConfig{
-			expectedError: &errors.StatusError{
-				ErrStatus: metav1.Status{
-					Status:  "Failure",
-					Message: "virtualmachineinstances.kubevirt.io \"\" not found", // no name printed since we're not passing a VMI
-					Reason:  "NotFound",
-					Details: &metav1.StatusDetails{
-						Name:  "",
-						Group: "kubevirt.io",
-						Kind:  "virtualmachineinstances",
+			expectedResponse: reconcile.Result{},
+		}),
+		Entry("the VMI was deleted, thus the existing IPAMClaims finalizers must be removed", testConfig{
+			expectedResponse: reconcile.Result{},
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace:  namespace,
+					Finalizers: []string{kubevirtVMFinalizer},
+					Labels:     ownedByVMLabel(vmName),
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "vm1.randomnet",
+						Namespace: "ns1",
+						Labels:    ownedByVMLabel(vmName),
 					},
-					Code: 404,
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
 			},
 		}),
@@ -205,13 +229,29 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 							UID:        dummyUID,
 						},
 					},
+					Labels:     ownedByVMLabel(vmName),
+					Finalizers: []string{kubevirtVMFinalizer},
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
 			expectedResponse: reconcile.Result{},
-			expectedIPAMClaims: []ipamclaimsapi.IPAMClaimSpec{
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
-					Network: "doesitmatter?",
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "vm1.randomnet",
+						Namespace: "ns1",
+						Labels:    ownedByVMLabel(vmName),
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "v1",
+								Kind:       "virtualmachines",
+								Name:       "vm1",
+								UID:        dummyUID,
+							},
+						},
+						Finalizers: []string{kubevirtVMFinalizer},
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
 			},
 		}),
@@ -219,9 +259,16 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 			inputVMI:         dummyVMI(nadName),
 			inputNAD:         dummyNAD(nadName),
 			expectedResponse: reconcile.Result{},
-			expectedIPAMClaims: []ipamclaimsapi.IPAMClaimSpec{
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
-					Network: "goodnet",
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            "vm1.randomnet",
+						Namespace:       "ns1",
+						Labels:          ownedByVMLabel(vmName),
+						Finalizers:      []string{kubevirtVMFinalizer},
+						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
 				},
 			},
 		}),
@@ -297,12 +344,11 @@ func dummyNADWrongFormat(nadName string) *nadv1.NetworkAttachmentDefinition {
 	}
 }
 
-func ipamClaimsSpecExtractor(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaimSpec {
-	ipamClaimsSpec := make([]ipamclaimsapi.IPAMClaimSpec, len(ipamClaims))
+func ipamClaimsCleaner(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaim {
 	for i := range ipamClaims {
-		ipamClaimsSpec[i] = ipamClaims[i].Spec
+		ipamClaims[i].ObjectMeta.ResourceVersion = ""
 	}
-	return ipamClaimsSpec
+	return ipamClaims
 }
 
 func decorateVMWithUID(uid string, vm *virtv1.VirtualMachine) *virtv1.VirtualMachine {
