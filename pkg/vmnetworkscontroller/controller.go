@@ -90,6 +90,9 @@ func (r *VirtualMachineReconciler) Reconcile(
 				Namespace:       vmi.Namespace,
 				OwnerReferences: []metav1.OwnerReference{ownerInfo},
 				Finalizers:      []string{kubevirtVMFinalizer},
+				Labels: map[string]string{
+					virtv1.VirtualMachineLabel: vmi.Name,
+				},
 			},
 			Spec: ipamclaimsapi.IPAMClaimSpec{
 				Network: netConfigName,
