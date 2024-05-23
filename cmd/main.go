@@ -26,6 +26,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -135,7 +136,8 @@ func main() {
 		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
 			opts.ByObject = map[client.Object]cache.ByObject{
 				&corev1.Pod{}: {
-					Label: virtLauncherSelector(),
+					Label:     virtLauncherSelector(),
+					Transform: pruneIrrelevantPodData,
 				},
 			}
 			return cache.New(config, opts)
@@ -185,4 +187,22 @@ func main() {
 
 func virtLauncherSelector() labels.Selector {
 	return labels.SelectorFromSet(map[string]string{virtv1.AppLabel: "virt-launcher"})
+}
+
+func pruneIrrelevantPodData(obj interface{}) (interface{}, error) {
+	oldPod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return obj, nil
+	}
+
+	newPod := oldPod.DeepCopy()
+	newPod.ObjectMeta = metav1.ObjectMeta{
+		Name:        oldPod.Name,
+		Namespace:   oldPod.Namespace,
+		UID:         oldPod.UID,
+		Annotations: oldPod.Annotations,
+		Labels:      oldPod.Labels,
+	}
+
+	return newPod, nil
 }
