@@ -203,6 +203,8 @@ func pruneIrrelevantPodData(obj interface{}) (interface{}, error) {
 		Annotations: oldPod.Annotations,
 		Labels:      oldPod.Labels,
 	}
+	newPod.Spec = corev1.PodSpec{}
+	newPod.Status = corev1.PodStatus{}
 
 	return newPod, nil
 }
