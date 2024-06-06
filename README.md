@@ -78,6 +78,84 @@ Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project
 kubectl apply -f https://raw.githubusercontent.com/maiqueb/kubevirt-ipam-claims/main/dist/install.yaml
 ```
 
+## Requesting persistent IPs for KubeVirt VMs
+To opt-in to this feature, the network must allow persistent IPs; for that,
+the user should configure the network-attachment-definition in the following
+way:
+```yaml
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: mynet
+  namespace: default
+spec:
+  config: |2
+    {
+        "cniVersion": "0.3.1",
+        "name": "tenantblue",
+        "netAttachDefName": "default/mynet",
+        "topology": "layer2",
+        "type": "ovn-k8s-cni-overlay",
+        "subnets": "192.168.200.0/24",
+        "excludeSubnets": "192.168.200.1/32",
+        "allowPersistentIPs": true
+    }
+```
+
+The relevant configuration is the `allowPersistentIPs` key.
+
+Once the NAD has been provisioned, the user should provision a VM whose
+interfaces connect to this network. Take the following yaml as an example:
+```yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: vm-a
+  name: vm-a
+spec:
+  running: true
+  template:
+    metadata:
+      name: vm-a
+      namespace: default
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: containerdisk
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+          interfaces:
+          - bridge: {}
+            name: anet
+          rng: {}
+        resources:
+          requests:
+            memory: 1024M
+      networks:
+      - multus:
+          networkName: default/mynet
+        name: anet
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - containerDisk:
+          image: quay.io/kubevirt/fedora-with-test-tooling-container-disk:v1.2.0
+        name: containerdisk
+      - cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            password: fedora
+            chpasswd: { expire: False }
+        name: cloudinitdisk
+```
+
+The controller should create the required `IPAMClaim`, then mutate the launcher
+pods to request using the aforementioned claims to persist their IP addresses.
+
 ## Contributing
 Currently, there's not much to be said ... Just ensure if you're updating code
 to provide unit-tests.
