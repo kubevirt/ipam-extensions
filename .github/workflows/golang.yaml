@@ -25,5 +25,15 @@ jobs:
         version: v1.57.2
         args: --timeout 3m --verbose cmd/... pkg/...
 
+    - name: Ensure latest install manifest
+      run: |
+        echo "" > dist/install.yaml
+        IMG=ghcr.io/maiqueb/kubevirt-ipam-claims:latest make build-installer
+        if [[ -n "$(git status --porcelain)" ]]; then
+          echo "Please run 'make build-installer' and commit those changes"
+          git status --porcelain
+          exit 1
+        fi
+
     - name: Test
       run: ENVTEST_VERSION="release-0.17" make test
