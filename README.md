@@ -1,8 +1,25 @@
 # kubevirt-ipam-claims
-// TODO(user): Add simple overview of use/purpose
+This repo provide a KubeVirt extension to create (and manage the lifecycle of)
+`IPAMClaim`s on behalf of KubeVirt virtual machines.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+This project provides a Kubernetes controller and mutating webhook that will
+monitor KubeVirt virtual machines.
+
+When it sees a KubeVirt VM being created, it will create an IPAMClaim for the
+VM interfaces attached to a network that features the `persistent ips` feature.
+
+It will also mutate the launcher pod where the VM will run to request a
+persistent IP from the CNI plugin.
+
+It implements the
+[multi-network de-facto standard v1.3](https://github.com/k8snetworkplumbingwg/multi-net-spec/tree/master/v1.3)
+IPAM extensions, explicitly the IPAMClaim CRD, and the `ipam-claim-reference`
+network selection element attribute, defined in sections 8.2, and 4.1.2.1.11
+respectively.
+
+The [OVN-Kubernetes CNI](https://github.com/ovn-org/ovn-kubernetes) is a CNI
+that implements this IPAM multi-network standard.
 
 ## Getting Started
 
@@ -16,49 +33,21 @@
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/kubevirt-ipam-claims:tag
+make docker-build docker-push IMG=<some-registry>/kubevirt-ipam-claims:<tag>
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified. 
 And it is required to have access to pull the image from the working environment. 
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
-**Install the CRDs into the cluster:**
-
-```sh
-make install
-```
-
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make deploy IMG=<some-registry>/kubevirt-ipam-claims:tag
+make deploy IMG=<some-registry>/kubevirt-ipam-claims:<tag>
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
 privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
 
 **UnDeploy the controller from the cluster:**
 
@@ -73,7 +62,7 @@ Following are the steps to build the installer and distribute this project to us
 1. Build the installer for the image built and published in the registry:
 
 ```sh
-make build-installer IMG=<some-registry>/kubevirt-ipam-claims:tag
+make build-installer IMG=<some-registry>/kubevirt-ipam-claims:<tag>
 ```
 
 NOTE: The makefile target mentioned above generates an 'install.yaml'
@@ -86,11 +75,92 @@ its dependencies.
 Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project, i.e.:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/kubevirt-ipam-claims/<tag or branch>/dist/install.yaml
+kubectl apply -f https://raw.githubusercontent.com/maiqueb/kubevirt-ipam-claims/main/dist/install.yaml
 ```
 
+## Requesting persistent IPs for KubeVirt VMs
+To opt-in to this feature, the network must allow persistent IPs; for that,
+the user should configure the network-attachment-definition in the following
+way:
+```yaml
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: mynet
+  namespace: default
+spec:
+  config: |2
+    {
+        "cniVersion": "0.3.1",
+        "name": "tenantblue",
+        "netAttachDefName": "default/mynet",
+        "topology": "layer2",
+        "type": "ovn-k8s-cni-overlay",
+        "subnets": "192.168.200.0/24",
+        "excludeSubnets": "192.168.200.1/32",
+        "allowPersistentIPs": true
+    }
+```
+
+The relevant configuration is the `allowPersistentIPs` key.
+
+Once the NAD has been provisioned, the user should provision a VM whose
+interfaces connect to this network. Take the following yaml as an example:
+```yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: vm-a
+  name: vm-a
+spec:
+  running: true
+  template:
+    metadata:
+      name: vm-a
+      namespace: default
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: containerdisk
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+          interfaces:
+          - bridge: {}
+            name: anet
+          rng: {}
+        resources:
+          requests:
+            memory: 1024M
+      networks:
+      - multus:
+          networkName: default/mynet
+        name: anet
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - containerDisk:
+          image: quay.io/kubevirt/fedora-with-test-tooling-container-disk:v1.2.0
+        name: containerdisk
+      - cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            password: fedora
+            chpasswd: { expire: False }
+        name: cloudinitdisk
+```
+
+The controller should create the required `IPAMClaim`, then mutate the launcher
+pods to request using the aforementioned claims to persist their IP addresses.
+
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+Currently, there's not much to be said ... Just ensure if you're updating code
+to provide unit-tests.
+
+This section will be improved later on.
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
