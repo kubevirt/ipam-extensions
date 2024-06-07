@@ -66,6 +66,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var enableHTTP2 bool
+	var certDir string
 
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -73,6 +74,13 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(
+		&certDir,
+		"certificates-dir",
+		"",
+		"Specify the certificates directory for the webhook server",
+	)
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -97,9 +105,14 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	webhookServer := webhook.NewServer(webhook.Options{
+	webhookOptions := webhook.Options{
 		TLSOpts: tlsOpts,
-	})
+	}
+	if certDir != "" {
+		setupLog.Info("using certificates directory", "dir", certDir)
+		webhookOptions.CertDir = certDir
+	}
+	webhookServer := webhook.NewServer(webhookOptions)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
