@@ -21,7 +21,18 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	testenv "github.com/maiqueb/kubevirt-ipam-claims/test/env"
 )
+
+var _ = BeforeSuite(func() {
+	ctrl.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	testenv.Start()
+})
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
