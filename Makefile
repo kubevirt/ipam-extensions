@@ -72,8 +72,9 @@ test: manifests generate fmt vet envtest ## Run tests.
 test-e2e:
 	export KUBECONFIG=$$(pwd)/.output/kubeconfig && \
 	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
+	export REPORT_PATH=$$(pwd)/.output/ && \
 	cd test/e2e && \
-	go test -test.v --ginkgo.v --test.timeout=${E2E_TEST_TIMEOUT} ${E2E_TEST_ARGS}
+	go test -test.v --ginkgo.v --test.timeout=${E2E_TEST_TIMEOUT} ${E2E_TEST_ARGS} --ginkgo.junit-report=$${REPORT_PATH}/test-e2e.junit.xml
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter & yamllint
