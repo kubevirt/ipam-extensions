@@ -39,7 +39,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push container image
+      - name: Push latest container image
         if: github.repository_owner == 'maiqueb'
         uses: docker/build-push-action@v5.3.0
         with:
@@ -57,3 +57,14 @@ jobs:
           tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
           file: Dockerfile
 
+      - name: Template release manifests
+        if: startsWith(github.ref, 'refs/tags/')
+        run: IMG=${{ github.ref_name }} make build-installer
+
+      - name: Release the kraken
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          files: |
+            dist/install.yaml
