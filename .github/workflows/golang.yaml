@@ -1,3 +1,4 @@
+name: Build, lint and unit test
 on:
   push:
     branches: [ "main" ]
