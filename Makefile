@@ -22,6 +22,9 @@ CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+E2E_TEST_TIMEOUT ?= "1h"
+E2E_TEST_ARGS ?= ""
+
 .PHONY: all
 all: build
 
@@ -67,7 +70,11 @@ test: manifests generate fmt vet envtest ## Run tests.
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e:
-	go test ./test/e2e/ -v -ginkgo.v
+	export KUBECONFIG=$$(pwd)/.output/kubeconfig && \
+	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
+	export REPORT_PATH=$$(pwd)/.output/ && \
+	cd test/e2e && \
+	go test -test.v --ginkgo.v --test.timeout=${E2E_TEST_TIMEOUT} ${E2E_TEST_ARGS} --ginkgo.junit-report=$${REPORT_PATH}/test-e2e.junit.xml
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter & yamllint
@@ -176,6 +183,18 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
+
+.PHONY: cluster-up
+cluster-up:
+	./hack/cluster.sh up
+
+.PHONY: cluster-down
+cluster-down:
+	./hack/cluster.sh down
+
+.PHONY: cluster-sync
+cluster-sync:
+	./hack/cluster.sh sync
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary (ideally with version)
