@@ -3,6 +3,7 @@
 set -xe
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+KIND_ARGS="${KIND_ARGS:--ic -ikv -i6 -mne}"
 
 OUTPUT_DIR=${OUTPUT_DIR:-${SCRIPT_DIR}/../.output}
 
@@ -51,7 +52,7 @@ function up() {
     kind delete cluster --name $cluster_name
     (
         cd ${OVN_KUBERNETES_DIR}
-        ./contrib/kind.sh --local-kind-registry -ic -ikv -i6 -mne -cn ${cluster_name}
+        ./contrib/kind.sh --local-kind-registry ${KIND_ARGS} -cn ${cluster_name}
     )
 }
 
