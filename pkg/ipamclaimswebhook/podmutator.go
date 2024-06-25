@@ -39,7 +39,7 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/config"
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create;update,versions=v1,name=ipam-claims.k8s.cni.cncf.io,admissionReviewVersions=v1,sideEffects=None
