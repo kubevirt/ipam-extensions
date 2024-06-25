@@ -44,8 +44,8 @@ import (
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/ipamclaimswebhook"
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/vmnetworkscontroller"
+	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
+	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
 	//+kubebuilder:scaffold:imports
 )
 

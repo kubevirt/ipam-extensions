@@ -24,7 +24,7 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/config"
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
 const kubevirtVMFinalizer = "kubevirt.io/persistent-ipam"
