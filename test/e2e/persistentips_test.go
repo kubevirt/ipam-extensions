@@ -32,7 +32,7 @@ import (
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
-	testenv "github.com/maiqueb/kubevirt-ipam-claims/test/env"
+	testenv "github.com/kubevirt/ipam-extensions/test/env"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

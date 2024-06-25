@@ -7,10 +7,10 @@ metadata:
     app.kubernetes.io/name: mutatingwebhookconfiguration
     app.kubernetes.io/instance: mutating-webhook-configuration
     app.kubernetes.io/component: webhook
-    app.kubernetes.io/created-by: kubevirt-ipam-claims
-    app.kubernetes.io/part-of: kubevirt-ipam-claims
+    app.kubernetes.io/created-by: kubevirt-ipam-controller
+    app.kubernetes.io/part-of: kubevirt-ipam-controller
     app.kubernetes.io/managed-by: kustomize
   name: mutating-webhook-configuration
-  namespace: kubevirt-ipam-claims-system
+  namespace: kubevirt-ipam-controller-system
   annotations:
     cert-manager.io/inject-ca-from: CERTIFICATE_NAMESPACE/CERTIFICATE_NAME

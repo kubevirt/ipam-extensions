@@ -1,4 +1,4 @@
-# kubevirt-ipam-claims
+# kubevirt-ipam-controller
 This repo provide a KubeVirt extension to create (and manage the lifecycle of)
 `IPAMClaim`s on behalf of KubeVirt virtual machines.
 
@@ -33,7 +33,7 @@ that implements this IPAM multi-network standard.
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/kubevirt-ipam-claims:<tag>
+make docker-build docker-push IMG=<some-registry>/ipam-controller:<tag>
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified. 
@@ -43,7 +43,7 @@ Make sure you have the proper permission to the registry if the above commands d
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make deploy IMG=<some-registry>/kubevirt-ipam-claims:<tag>
+make deploy IMG=<some-registry>/ipam-controller:<tag>
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
@@ -62,7 +62,7 @@ Following are the steps to build the installer and distribute this project to us
 1. Build the installer for the image built and published in the registry:
 
 ```sh
-make build-installer IMG=<some-registry>/kubevirt-ipam-claims:<tag>
+make build-installer IMG=<some-registry>/ipam-controller:<tag>
 ```
 
 NOTE: The makefile target mentioned above generates an 'install.yaml'
@@ -75,7 +75,7 @@ its dependencies.
 Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project, i.e.:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/maiqueb/kubevirt-ipam-claims/main/dist/install.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubevirt/ipam-extensions/main/dist/install.yaml
 ```
 
 ## Requesting persistent IPs for KubeVirt VMs

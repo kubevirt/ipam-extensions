@@ -26,7 +26,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	testenv "github.com/maiqueb/kubevirt-ipam-claims/test/env"
+	testenv "github.com/kubevirt/ipam-extensions/test/env"
 )
 
 var _ = BeforeSuite(func() {
@@ -37,5 +37,5 @@ var _ = BeforeSuite(func() {
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "kubevirt-ipam-claims e2e suite")
+	RunSpecs(t, "kubevirt-ipam-controller e2e suite")
 }
