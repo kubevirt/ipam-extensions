@@ -1,4 +1,4 @@
-module github.com/maiqueb/kubevirt-ipam-claims
+module github.com/kubevirt/ipam-extensions
 
 go 1.21
 

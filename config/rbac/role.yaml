@@ -5,8 +5,8 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: manager-role
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: kubevirt-ipam-claims
-    app.kubernetes.io/part-of: kubevirt-ipam-claims
+    app.kubernetes.io/created-by: kubevirt-ipam-controller
+    app.kubernetes.io/part-of: kubevirt-ipam-controller
     app.kubernetes.io/managed-by: kustomize
   name: manager-role
 rules:

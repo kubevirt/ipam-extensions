@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: kubevirt/ipam-controller
 
 jobs:
   push-amd64:
@@ -32,20 +32,20 @@ jobs:
         uses: docker/setup-buildx-action@v3.0.0
 
       - name: Login to Container Registry
-        if: github.repository_owner == 'maiqueb'
+        if: github.repository_owner == 'kubevirt'
         uses: docker/login-action@v3.0.0
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push latest container image
-        if: github.repository_owner == 'maiqueb'
+        if: github.repository_owner == 'kubevirt'
         uses: docker/build-push-action@v5.3.0
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           file: Dockerfile
 
       - name: Push stable container image
@@ -54,12 +54,12 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           file: Dockerfile
 
       - name: Template release manifests
         if: startsWith(github.ref, 'refs/tags/')
-        run: IMG=ghcr.io/${{ github.repository }}:${{ github.ref_name }} make build-installer
+        run: IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} make build-installer
 
       - name: Release the kraken
         uses: softprops/action-gh-release@v1

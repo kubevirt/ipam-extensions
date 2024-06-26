@@ -29,7 +29,7 @@ jobs:
     - name: Ensure latest install manifest
       run: |
         echo "" > dist/install.yaml
-        IMG=ghcr.io/maiqueb/kubevirt-ipam-claims:latest make build-installer
+        IMG=ghcr.io/kubevirt/ipam-controller:latest make build-installer
         if [[ -n "$(git status --porcelain)" ]]; then
           echo "Please run 'make build-installer' and commit those changes"
           git status --porcelain
