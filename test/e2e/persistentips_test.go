@@ -129,6 +129,7 @@ var _ = Describe("Persistent IPs", func() {
 				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(networkInterfaceName, ConsistOf(vmiIPsBeforeRestart)))
 			})
 		})
+
 		Context("and a virtual machine instance using it is also created", func() {
 			BeforeEach(func() {
 				By("Creating VMI using the nad")
