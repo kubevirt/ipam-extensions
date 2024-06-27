@@ -52,6 +52,7 @@ function up() {
     kind delete cluster --name $cluster_name
     (
         cd ${OVN_KUBERNETES_DIR}
+        curl -L https://github.com/ovn-org/ovn-kubernetes/pull/4475.patch | git apply
         ./contrib/kind.sh --local-kind-registry ${KIND_ARGS} -cn ${cluster_name}
     )
 }
