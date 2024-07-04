@@ -101,34 +101,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 				Network: netConfigName,
 			},
 		}
-
-		if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				claimKey := apitypes.NamespacedName{
-					Namespace: vmi.Namespace,
-					Name:      claimKey,
-				}
-
-				existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
-				if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
-					if apierrors.IsNotFound(err) {
-						// we assume it had already cleaned up in the few miliseconds it took to get here ...
-						// TODO does this make sense? ... It's pretty much just for completeness.
-						continue
-					} else if err != nil {
-						return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
-					}
-				}
-				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
-					r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
-					continue
-				} else {
-					err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
-					r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
-					return controllerruntime.Result{}, err
-				}
-			}
-			r.Log.Error(err, "failed to create the IPAMClaim")
+		if err := r.CreateIPAMClaim(ctx, ipamClaim, &ownerInfo); err != nil {
 			return controllerruntime.Result{}, err
 		}
 	}
@@ -224,6 +197,39 @@ func (r *VirtualMachineInstanceReconciler) Cleanup(vmiKey apitypes.NamespacedNam
 				return client.IgnoreNotFound(err)
 			}
 		}
+	}
+	return nil
+}
+
+func (r *VirtualMachineReconciler) CreateIPAMClaim(ctx context.Context, ipamClaim *ipamclaimsapi.IPAMClaim, ownerInfo *metav1.OwnerReference) error {
+	if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			claimKey := apitypes.NamespacedName{
+				Namespace: ipamClaim.Namespace,
+				Name:      ipamClaim.Name,
+			}
+
+			existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
+			if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
+				if apierrors.IsNotFound(err) {
+					// we assume it had already cleaned up in the few miliseconds it took to get here ...
+					// TODO does this make sense? ... It's pretty much just for completeness.
+					return nil
+				} else if err != nil {
+					return fmt.Errorf("let us be on the safe side and retry later")
+				}
+			}
+			if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
+				r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
+				return nil
+			} else {
+				err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
+				r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
+				return err
+			}
+		}
+		r.Log.Error(err, "failed to create the IPAMClaim")
+		return err
 	}
 	return nil
 }
