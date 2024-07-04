@@ -65,6 +65,14 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
+	vmName, hasVMAnnotation := pod.Annotations["kubevirt.io/domain"]
+	if !hasVMAnnotation {
+		log.Info(
+			"does not have the kubevirt VM annotation",
+		)
+		return admission.Allowed("not a VM")
+	}
+
 	log.Info("webhook handling event")
 	networkSelectionElements, err := netutils.ParsePodNetworkAnnotation(pod)
 	if err != nil {
@@ -112,15 +120,6 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 				"NAD", nadName,
 				"network", pluginConfig.Name,
 			)
-			vmName, hasVMAnnotation := pod.Annotations["kubevirt.io/domain"]
-			if !hasVMAnnotation {
-				log.Info(
-					"does not have the kubevirt VM annotation",
-					"NAD", nadName,
-					"network", pluginConfig.Name,
-				)
-				return admission.Allowed("not a VM")
-			}
 
 			vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
 			vmi := &virtv1.VirtualMachineInstance{}
