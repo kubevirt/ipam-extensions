@@ -11,6 +11,8 @@ const (
 	NetworkRolePrimary NetworkRole = "primary"
 )
 
+const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/ovn-udn-ipamclaim-reference"
+
 type RelevantConfig struct {
 	Name               string      `json:"name"`
 	AllowPersistentIPs bool        `json:"allowPersistentIPs,omitempty"`
