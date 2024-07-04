@@ -41,7 +41,7 @@ var (
 type testConfig struct {
 	inputVM            *virtv1.VirtualMachine
 	inputVMI           *virtv1.VirtualMachineInstance
-	inputNAD           *nadv1.NetworkAttachmentDefinition
+	inputNADs          []*nadv1.NetworkAttachmentDefinition
 	existingIPAMClaim  *ipamclaimsapi.IPAMClaim
 	expectedError      error
 	expectedResponse   reconcile.Result
@@ -89,8 +89,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			initialObjects = append(initialObjects, config.inputVMI)
 		}
 
-		if config.inputNAD != nil {
-			initialObjects = append(initialObjects, config.inputNAD)
+		for _, nad := range config.inputNADs {
+			initialObjects = append(initialObjects, nad)
 		}
 
 		if config.existingIPAMClaim != nil {
@@ -135,10 +135,13 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			Expect(ipamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
 	},
-		Entry("when the VM has an associated VMI pointing to an existing NAD", testConfig{
-			inputVM:          dummyVM(nadName),
-			inputVMI:         dummyVMI(nadName),
-			inputNAD:         dummyNAD(nadName),
+		Entry("when the VM has an associated VMI pointing to an existing NAD with a primary network at namespace", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyNAD(nadName),
+				dummyPrimaryNetworkNAD(nadName),
+			},
 			expectedResponse: reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
@@ -151,12 +154,25 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
 				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            fmt.Sprintf("%s.%s", vmName, "primarynet"),
+						Namespace:       namespace,
+						Finalizers:      []string{kubevirtVMFinalizer},
+						Labels:          ownedByVMLabel(vmName),
+						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "primarynet"},
+				},
 			},
 		}),
+
 		Entry("when the VM has an associated VMI pointing to an existing NAD with an improper config", testConfig{
-			inputVM:       dummyVM(nadName),
-			inputVMI:      dummyVMI(nadName),
-			inputNAD:      dummyNADWrongFormat(nadName),
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyNADWrongFormat(nadName),
+			},
 			expectedError: fmt.Errorf("failed to extract the relevant NAD information"),
 		}),
 		Entry("the associated VMI exists but points to a NAD that doesn't exist", testConfig{
@@ -204,7 +220,9 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		Entry("everything is OK but there's already an IPAMClaim with this name", testConfig{
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyNAD(nadName),
+			},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
@@ -217,7 +235,9 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		Entry("found an existing IPAMClaim for the same VM", testConfig{
 			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
 			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyNAD(nadName),
+			},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
@@ -259,7 +279,9 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		Entry("found an existing IPAMClaim for a VM with same name but different UID", testConfig{
 			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
 			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyNAD(nadName),
+			},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
@@ -280,8 +302,10 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
 		Entry("a lonesome VMI (with no corresponding VM) is a valid migration use-case", testConfig{
-			inputVMI:         dummyVMI(nadName),
-			inputNAD:         dummyNAD(nadName),
+			inputVMI: dummyVMI(nadName),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyNAD(nadName),
+			},
 			expectedResponse: reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
@@ -342,7 +366,7 @@ func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 	}
 }
 
-func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
+func dummyNADWithConfig(nadName string, config string) *nadv1.NetworkAttachmentDefinition {
 	namespaceAndName := strings.Split(nadName, "/")
 	return &nadv1.NetworkAttachmentDefinition{
 		ObjectMeta: metav1.ObjectMeta{
@@ -350,9 +374,17 @@ func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
 			Name:      namespaceAndName[1],
 		},
 		Spec: nadv1.NetworkAttachmentDefinitionSpec{
-			Config: `{"name": "goodnet", "allowPersistentIPs": true}`,
+			Config: config,
 		},
 	}
+}
+
+func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
+	return dummyNADWithConfig(nadName, `{"name": "goodnet", "allowPersistentIPs": true}`)
+}
+
+func dummyPrimaryNetworkNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
+	return dummyNADWithConfig(nadName+"primary", `{"name": "primarynet", "role": "primary", "allowPersistentIPs": true}`)
 }
 
 func dummyNADWrongFormat(nadName string) *nadv1.NetworkAttachmentDefinition {
