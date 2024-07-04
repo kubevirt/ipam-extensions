@@ -40,6 +40,8 @@ import (
 	virtv1 "kubevirt.io/api/core/v1"
 
 	"github.com/kubevirt/ipam-extensions/pkg/config"
+	"github.com/kubevirt/ipam-extensions/pkg/ipamclaim"
+	"github.com/kubevirt/ipam-extensions/pkg/udn"
 )
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create;update,versions=v1,name=ipam-claims.k8s.cni.cncf.io,admissionReviewVersions=v1,sideEffects=None
@@ -86,7 +88,29 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	var (
 		hasChangedNetworkSelectionElements bool
 		podNetworkSelectionElements        = make([]v1.NetworkSelectionElement, 0, len(networkSelectionElements))
+		primaryNetworkIpamClaimName        = ""
 	)
+	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, a.Client, pod.Namespace)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+
+	if primaryNetworkNAD != nil {
+		pluginConfig, err := config.NewConfig(primaryNetworkNAD.Spec.Config)
+		if err != nil {
+			return admission.Errored(http.StatusInternalServerError, err)
+		}
+
+		if pluginConfig.AllowPersistentIPs {
+			log.Info(
+				"will request primary network persistent IPs",
+				"NAD", client.ObjectKeyFromObject(primaryNetworkNAD),
+				"network", pluginConfig.Name,
+			)
+			primaryNetworkIpamClaimName = ipamclaim.GenerateName(vmName, pluginConfig.Name)
+		}
+	}
+
 	for _, networkSelectionElement := range networkSelectionElements {
 		nadName := types.NamespacedName{
 			Namespace: networkSelectionElement.Namespace,
@@ -139,7 +163,7 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 				continue
 			}
 
-			networkSelectionElement.IPAMClaimReference = fmt.Sprintf("%s.%s", vmName, networkName)
+			networkSelectionElement.IPAMClaimReference = ipamclaim.GenerateName(vmName, networkName)
 			log.Info(
 				"requesting claim",
 				"NAD", nadName,
@@ -153,10 +177,14 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		podNetworkSelectionElements = append(podNetworkSelectionElements, *networkSelectionElement)
 	}
 
-	if len(podNetworkSelectionElements) > 0 {
+	if len(podNetworkSelectionElements) > 0 || primaryNetworkIpamClaimName != "" {
 		newPod, err := podWithUpdatedSelectionElements(pod, podNetworkSelectionElements)
 		if err != nil {
 			return admission.Errored(http.StatusInternalServerError, err)
+		}
+
+		if primaryNetworkIpamClaimName != "" {
+			newPod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] = primaryNetworkIpamClaimName
 		}
 
 		if reflect.DeepEqual(newPod, pod) || !hasChangedNetworkSelectionElements {
