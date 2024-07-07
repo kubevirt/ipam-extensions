@@ -66,10 +66,11 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 	})
 
 	const (
-		nadName   = "ns1/superdupernad"
-		namespace = "ns1"
-		vmName    = "vm1"
-		dummyUID  = "imastringpretentingtobeauid"
+		nadName       = "ns1/superdupernad"
+		namespace     = "ns1"
+		vmName        = "vm1"
+		dummyUID      = "dummyUID"
+		unexpectedUID = "unexpectedUID"
 	)
 
 	DescribeTable("reconcile behavior is as expected", func(config testConfig) {
@@ -254,6 +255,29 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
 			},
+		}),
+		Entry("found an existing IPAMClaim for a VM with same name but different UID", testConfig{
+			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
+			inputVMI: dummyVMI(nadName),
+			inputNAD: dummyNAD(nadName),
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace: namespace,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: "v1",
+							Kind:       "virtualmachines",
+							Name:       "vm1",
+							UID:        unexpectedUID,
+						},
+					},
+					Labels:     ownedByVMLabel(vmName),
+					Finalizers: []string{kubevirtVMFinalizer},
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
 		Entry("a lonesome VMI (with no corresponding VM) is a valid migration use-case", testConfig{
 			inputVMI:         dummyVMI(nadName),
