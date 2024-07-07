@@ -27,11 +27,13 @@ import (
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/claims"
 )
 
 func TestController(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Controller test suite")
+	RunSpecs(t, "VMI Controller test suite")
 }
 
 var (
@@ -48,7 +50,7 @@ type testConfig struct {
 	expectedIPAMClaims []ipamclaimsapi.IPAMClaim
 }
 
-var _ = Describe("vmi IPAM controller", Serial, func() {
+var _ = Describe("VMI IPAM controller", Serial, func() {
 	BeforeEach(func() {
 		log.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 		testEnv = &envtest.Environment{}
@@ -131,7 +133,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		if len(config.expectedIPAMClaims) > 0 {
 			ipamClaimList := &ipamclaimsapi.IPAMClaimList{}
 
-			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, ownedByVMLabel(vmName))).To(Succeed())
+			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, claims.OwnedByVMLabel(vmName))).To(Succeed())
 			Expect(ipamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
 	},
@@ -145,8 +147,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:            fmt.Sprintf("%s.%s", vmName, "randomnet"),
 						Namespace:       namespace,
-						Finalizers:      []string{kubevirtVMFinalizer},
-						Labels:          ownedByVMLabel(vmName),
+						Finalizers:      []string{claims.KubevirtVMFinalizer},
+						Labels:          claims.OwnedByVMLabel(vmName),
 						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
@@ -185,8 +187,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
 					Namespace:  namespace,
-					Finalizers: []string{kubevirtVMFinalizer},
-					Labels:     ownedByVMLabel(vmName),
+					Finalizers: []string{claims.KubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
@@ -195,7 +197,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "vm1.randomnet",
 						Namespace: "ns1",
-						Labels:    ownedByVMLabel(vmName),
+						Labels:    claims.OwnedByVMLabel(vmName),
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
@@ -230,8 +232,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 							UID:        dummyUID,
 						},
 					},
-					Labels:     ownedByVMLabel(vmName),
-					Finalizers: []string{kubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+					Finalizers: []string{claims.KubevirtVMFinalizer},
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
@@ -241,7 +243,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "vm1.randomnet",
 						Namespace: "ns1",
-						Labels:    ownedByVMLabel(vmName),
+						Labels:    claims.OwnedByVMLabel(vmName),
 						OwnerReferences: []metav1.OwnerReference{
 							{
 								APIVersion: "v1",
@@ -250,7 +252,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 								UID:        dummyUID,
 							},
 						},
-						Finalizers: []string{kubevirtVMFinalizer},
+						Finalizers: []string{claims.KubevirtVMFinalizer},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
@@ -272,8 +274,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 							UID:        unexpectedUID,
 						},
 					},
-					Labels:     ownedByVMLabel(vmName),
-					Finalizers: []string{kubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+					Finalizers: []string{claims.KubevirtVMFinalizer},
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
@@ -288,8 +290,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:            "vm1.randomnet",
 						Namespace:       "ns1",
-						Labels:          ownedByVMLabel(vmName),
-						Finalizers:      []string{kubevirtVMFinalizer},
+						Labels:          claims.OwnedByVMLabel(vmName),
+						Finalizers:      []string{claims.KubevirtVMFinalizer},
 						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
