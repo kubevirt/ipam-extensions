@@ -1,4 +1,4 @@
-package vmnetworkscontroller
+package vminetworkscontroller
 
 import (
 	"context"
@@ -48,7 +48,7 @@ type testConfig struct {
 	expectedIPAMClaims []ipamclaimsapi.IPAMClaim
 }
 
-var _ = Describe("vm IPAM controller", Serial, func() {
+var _ = Describe("vmi IPAM controller", Serial, func() {
 	BeforeEach(func() {
 		log.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 		testEnv = &envtest.Environment{}
@@ -117,7 +117,7 @@ var _ = Describe("vm IPAM controller", Serial, func() {
 		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
 		Expect(err).NotTo(HaveOccurred())
 
-		reconcileMachine := NewVMReconciler(mgr)
+		reconcileMachine := NewVMIReconciler(mgr)
 		if config.expectedError != nil {
 			_, err := reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey})
 			Expect(err).To(MatchError(config.expectedError))
