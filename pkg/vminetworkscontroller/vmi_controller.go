@@ -1,4 +1,4 @@
-package vmnetworkscontroller
+package vminetworkscontroller
 
 import (
 	"context"
@@ -29,16 +29,16 @@ import (
 
 const kubevirtVMFinalizer = "kubevirt.io/persistent-ipam"
 
-// VirtualMachineReconciler reconciles a VirtualMachineInstance object
-type VirtualMachineReconciler struct {
+// VirtualMachineInstanceReconciler reconciles a VirtualMachineInstance object
+type VirtualMachineInstanceReconciler struct {
 	client.Client
 	Log     logr.Logger
 	Scheme  *runtime.Scheme
 	manager controllerruntime.Manager
 }
 
-func NewVMReconciler(manager controllerruntime.Manager) *VirtualMachineReconciler {
-	return &VirtualMachineReconciler{
+func NewVMIReconciler(manager controllerruntime.Manager) *VirtualMachineInstanceReconciler {
+	return &VirtualMachineInstanceReconciler{
 		Client:  manager.GetClient(),
 		Log:     controllerruntime.Log.WithName("controllers").WithName("VirtualMachineInstance"),
 		Scheme:  manager.GetScheme(),
@@ -46,7 +46,7 @@ func NewVMReconciler(manager controllerruntime.Manager) *VirtualMachineReconcile
 	}
 }
 
-func (r *VirtualMachineReconciler) Reconcile(
+func (r *VirtualMachineInstanceReconciler) Reconcile(
 	ctx context.Context,
 	request controllerruntime.Request,
 ) (controllerruntime.Result, error) {
@@ -135,14 +135,14 @@ func (r *VirtualMachineReconciler) Reconcile(
 }
 
 // Setup sets up the controller with the Manager passed in the constructor.
-func (r *VirtualMachineReconciler) Setup() error {
+func (r *VirtualMachineInstanceReconciler) Setup() error {
 	return controllerruntime.NewControllerManagedBy(r.manager).
 		For(&virtv1.VirtualMachineInstance{}).
-		WithEventFilter(onVMPredicates()).
+		WithEventFilter(onVMIPredicates()).
 		Complete(r)
 }
 
-func onVMPredicates() predicate.Funcs {
+func onVMIPredicates() predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(createEvent event.CreateEvent) bool {
 			return true
@@ -159,7 +159,7 @@ func onVMPredicates() predicate.Funcs {
 	}
 }
 
-func (r *VirtualMachineReconciler) vmiNetworksClaimingIPAM(
+func (r *VirtualMachineInstanceReconciler) vmiNetworksClaimingIPAM(
 	ctx context.Context,
 	vmi *virtv1.VirtualMachineInstance,
 ) (map[string]string, error) {
@@ -205,7 +205,7 @@ func (r *VirtualMachineReconciler) vmiNetworksClaimingIPAM(
 	return vmiNets, nil
 }
 
-func (r *VirtualMachineReconciler) Cleanup(vmiKey apitypes.NamespacedName) error {
+func (r *VirtualMachineInstanceReconciler) Cleanup(vmiKey apitypes.NamespacedName) error {
 	ipamClaims := &ipamclaimsapi.IPAMClaimList{}
 	if err := r.Client.List(context.Background(), ipamClaims, ownedByVMLabel(vmiKey.Name)); err != nil {
 		return fmt.Errorf("could not get list of IPAMClaims owned by VM %q: %w", vmiKey.String(), err)

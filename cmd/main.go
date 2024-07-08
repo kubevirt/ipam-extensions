@@ -45,7 +45,7 @@ import (
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
-	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
+	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -156,8 +156,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = vmnetworkscontroller.NewVMReconciler(mgr).Setup(); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachine")
+	if err = vminetworkscontroller.NewVMIReconciler(mgr).Setup(); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineInstance")
 		os.Exit(1)
 	}
 
