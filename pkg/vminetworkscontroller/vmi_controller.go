@@ -61,6 +61,8 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
 		}
 		return controllerruntime.Result{}, nil
+	} else if err != nil {
+		return controllerruntime.Result{}, err
 	}
 
 	var ownerInfo metav1.OwnerReference
