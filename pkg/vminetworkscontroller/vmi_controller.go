@@ -59,20 +59,13 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 		return controllerruntime.Result{}, err
 	}
 
-	var ownerInfo metav1.OwnerReference
+	hasVMOwner := false
 	vm := &virtv1.VirtualMachine{}
 	contextWithTimeout, cancel = context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	hasVMOwner := false
-	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); apierrors.IsNotFound(err) {
-		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
-		if vmi != nil {
-			ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
-		}
-	} else if err == nil {
-		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
+	if err = r.Client.Get(contextWithTimeout, request.NamespacedName, vm); err == nil {
 		hasVMOwner = true
-	} else {
+	} else if !apierrors.IsNotFound(err) {
 		return controllerruntime.Result{}, fmt.Errorf(
 			"error to get VMI %q corresponding VM: %w",
 			request.NamespacedName,
@@ -91,6 +84,13 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 	vmiNetworks, err := r.vmiNetworksClaimingIPAM(ctx, vmi)
 	if err != nil {
 		return controllerruntime.Result{}, err
+	}
+
+	var ownerInfo metav1.OwnerReference
+	if hasVMOwner {
+		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
+	} else {
+		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
 	}
 
 	for logicalNetworkName, netConfigName := range vmiNetworks {
