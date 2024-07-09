@@ -111,14 +111,9 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 
 				existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
 				if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
-					if apierrors.IsNotFound(err) {
-						// we assume it had already cleaned up in the few miliseconds it took to get here ...
-						// TODO does this make sense? ... It's pretty much just for completeness.
-						continue
-					} else if err != nil {
-						return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
-					}
+					return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
 				}
+
 				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
 					r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
 					continue
