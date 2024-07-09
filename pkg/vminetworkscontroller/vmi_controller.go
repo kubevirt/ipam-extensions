@@ -209,7 +209,11 @@ func (r *VirtualMachineInstanceReconciler) vmiNetworksClaimingIPAM(
 
 func (r *VirtualMachineInstanceReconciler) Cleanup(vmiKey apitypes.NamespacedName) error {
 	ipamClaims := &ipamclaimsapi.IPAMClaimList{}
-	if err := r.Client.List(context.Background(), ipamClaims, ownedByVMLabel(vmiKey.Name)); err != nil {
+	listOpts := []client.ListOption{
+		client.InNamespace(vmiKey.Namespace),
+		ownedByVMLabel(vmiKey.Name),
+	}
+	if err := r.Client.List(context.Background(), ipamClaims, listOpts...); err != nil {
 		return fmt.Errorf("could not get list of IPAMClaims owned by VM %q: %w", vmiKey.String(), err)
 	}
 
