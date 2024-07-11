@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"k8s.io/utils/ptr"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,30 +58,32 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 	defer cancel()
 	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
-		r.Log.Info("could not retrieve VMI - will cleanup its IPAMClaims")
-		if err := r.Cleanup(request.NamespacedName); err != nil {
-			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
-		}
-		return controllerruntime.Result{}, nil
+		vmi = nil
 	} else if err != nil {
 		return controllerruntime.Result{}, err
 	}
 
+	vm, err := getOwningVM(ctx, r.Client, request.NamespacedName)
+	if err != nil {
+		return controllerruntime.Result{}, err
+	}
+
+	if shouldCleanFinalizers(vmi, vm) {
+		if err := r.Cleanup(request.NamespacedName); err != nil {
+			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
+		}
+		return controllerruntime.Result{}, nil
+	}
+
+	if vmi == nil {
+		return controllerruntime.Result{}, nil
+	}
+
 	var ownerInfo metav1.OwnerReference
-	vm := &virtv1.VirtualMachine{}
-	contextWithTimeout, cancel = context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); apierrors.IsNotFound(err) {
-		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
-		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
-	} else if err == nil {
-		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
+	if vm != nil {
+		ownerInfo = ownerReferenceFor(vm, vm.APIVersion, vm.Kind)
 	} else {
-		return controllerruntime.Result{}, fmt.Errorf(
-			"error to get VMI %q corresponding VM: %w",
-			request.NamespacedName,
-			err,
-		)
+		ownerInfo = ownerReferenceFor(vmi, vmi.APIVersion, vmi.Kind)
 	}
 
 	vmiNetworks, err := r.vmiNetworksClaimingIPAM(ctx, vmi)
@@ -148,7 +152,7 @@ func onVMIPredicates() predicate.Funcs {
 			return true
 		},
 		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(event.GenericEvent) bool {
 			return false
@@ -227,4 +231,40 @@ func ownedByVMLabel(vmiName string) client.MatchingLabels {
 	return map[string]string{
 		virtv1.VirtualMachineLabel: vmiName,
 	}
+}
+
+func shouldCleanFinalizers(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) bool {
+	return (vm != nil && vmi == nil && vm.DeletionTimestamp != nil) ||
+		(vm == nil && (vmi == nil || (vmi.DeletionTimestamp != nil && len(vmi.Status.ActivePods) == 0)))
+}
+
+func ownerReferenceFor(obj client.Object, apiVersion, kind string) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion:         apiVersion,
+		Kind:               kind,
+		Name:               obj.GetName(),
+		UID:                obj.GetUID(),
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
+	}
+}
+
+func getOwningVM(
+	ctx context.Context,
+	client client.Client,
+	namespacedName apitypes.NamespacedName) (*virtv1.VirtualMachine, error) {
+	vm := &virtv1.VirtualMachine{}
+	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	var err error
+	// if vmi != nil, we can get the ownerRef from it, but if vm == nil we need to try and get the vm
+	// for now lets always try to get vm for simplicity
+	if err = client.Get(contextWithTimeout, namespacedName, vm); err == nil {
+		return vm, nil
+	} else if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("error getting VM %q: %w", namespacedName, err)
 }
