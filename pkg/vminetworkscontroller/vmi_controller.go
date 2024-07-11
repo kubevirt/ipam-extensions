@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"k8s.io/utils/ptr"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,30 +58,56 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 	defer cancel()
 	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
-		r.Log.Info("could not retrieve VMI - will cleanup its IPAMClaims")
-		if err := r.Cleanup(request.NamespacedName); err != nil {
-			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
-		}
-		return controllerruntime.Result{}, nil
+		vmi = nil
 	} else if err != nil {
 		return controllerruntime.Result{}, err
 	}
 
-	var ownerInfo metav1.OwnerReference
 	vm := &virtv1.VirtualMachine{}
 	contextWithTimeout, cancel = context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); apierrors.IsNotFound(err) {
-		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
-		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
-	} else if err == nil {
-		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
-	} else {
+	hasVMOwner := false
+	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); err == nil {
+		hasVMOwner = true
+	} else if !apierrors.IsNotFound(err) {
 		return controllerruntime.Result{}, fmt.Errorf(
 			"error to get VMI %q corresponding VM: %w",
 			request.NamespacedName,
 			err,
 		)
+	}
+
+	if (hasVMOwner && vmi == nil && vm.DeletionTimestamp != nil) ||
+		(!hasVMOwner && (vmi == nil || (vmi.DeletionTimestamp != nil && len(vmi.Status.ActivePods) == 0))) {
+		if err := r.Cleanup(request.NamespacedName); err != nil {
+			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
+		}
+		return controllerruntime.Result{}, nil
+	}
+
+	if vmi == nil {
+		return controllerruntime.Result{}, nil
+	}
+
+	var ownerInfo metav1.OwnerReference
+	if hasVMOwner {
+		ownerInfo = metav1.OwnerReference{
+			APIVersion:         vm.APIVersion,
+			Kind:               vm.Kind,
+			Name:               vm.Name,
+			UID:                vm.UID,
+			Controller:         ptr.To(true),
+			BlockOwnerDeletion: ptr.To(true),
+		}
+	} else {
+		ownerInfo = metav1.OwnerReference{
+			APIVersion:         vmi.APIVersion,
+			Kind:               vmi.Kind,
+			Name:               vmi.Name,
+			UID:                vmi.UID,
+			Controller:         ptr.To(true),
+			BlockOwnerDeletion: ptr.To(true),
+		}
 	}
 
 	vmiNetworks, err := r.vmiNetworksClaimingIPAM(ctx, vmi)
@@ -148,7 +176,7 @@ func onVMIPredicates() predicate.Funcs {
 			return true
 		},
 		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(event.GenericEvent) bool {
 			return false
