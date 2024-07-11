@@ -28,6 +28,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -98,12 +100,58 @@ var _ = Describe("Persistent IPs", func() {
 
 			})
 
-			It("should garbage collect IPAMClaims after virtual machine deletion", func() {
+			It("should garbage collect IPAMClaims after VM deletion", func() {
 				Expect(testenv.Client.Delete(context.Background(), vm)).To(Succeed())
 				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
 					WithTimeout(time.Minute).
 					WithPolling(time.Second).
 					Should(BeEmpty())
+			})
+
+			It("should garbage collect IPAMClaims after VM foreground deletion", func() {
+				Expect(testenv.Client.Delete(context.Background(), vm, foregroundDeleteOptions())).To(Succeed())
+				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					Should(BeEmpty())
+			})
+
+			When("the VM is stopped", func() {
+				BeforeEach(func() {
+					By("Invoking virtctl stop")
+					output, err := exec.Command("virtctl", "stop", "-n", td.Namespace, vmi.Name).CombinedOutput()
+					Expect(err).NotTo(HaveOccurred(), output)
+
+					By("Ensuring VM is not running")
+					Eventually(testenv.ThisVMI(vmi), 360*time.Second, 1*time.Second).Should(
+						And(
+							Not(testenv.BeCreated()),
+							Not(testenv.BeReady()),
+						))
+
+					Consistently(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+						WithTimeout(time.Minute).
+						WithPolling(time.Second).
+						ShouldNot(BeEmpty())
+				})
+
+				It("should garbage collect IPAMClaims after VM is deleted", func() {
+					By("Delete VM and check ipam claims are gone")
+					Expect(testenv.Client.Delete(context.Background(), vm)).To(Succeed())
+					Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+						WithTimeout(time.Minute).
+						WithPolling(time.Second).
+						Should(BeEmpty())
+				})
+
+				It("should garbage collect IPAMClaims after VM is foreground deleted", func() {
+					By("Foreground delete VM and check ipam claims are gone")
+					Expect(testenv.Client.Delete(context.Background(), vm, foregroundDeleteOptions())).To(Succeed())
+					Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+						WithTimeout(time.Minute).
+						WithPolling(time.Second).
+						Should(BeEmpty())
+				})
 			})
 
 			It("should keep ips after restart", func() {
@@ -163,8 +211,16 @@ var _ = Describe("Persistent IPs", func() {
 
 			})
 
-			It("should garbage collect IPAMClaims after virtual machine deletion", func() {
+			It("should garbage collect IPAMClaims after VMI deletion", func() {
 				Expect(testenv.Client.Delete(context.Background(), vmi)).To(Succeed())
+				Eventually(testenv.IPAMClaimsFromNamespace(vmi.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					Should(BeEmpty())
+			})
+
+			It("should garbage collect IPAMClaims after VMI foreground deletion", func() {
+				Expect(testenv.Client.Delete(context.Background(), vmi, foregroundDeleteOptions())).To(Succeed())
 				Eventually(testenv.IPAMClaimsFromNamespace(vmi.Namespace)).
 					WithTimeout(time.Minute).
 					WithPolling(time.Second).
@@ -174,3 +230,10 @@ var _ = Describe("Persistent IPs", func() {
 
 	})
 })
+
+func foregroundDeleteOptions() *client.DeleteOptions {
+	foreground := metav1.DeletePropagationForeground
+	return &client.DeleteOptions{
+		PropagationPolicy: &foreground,
+	}
+}
