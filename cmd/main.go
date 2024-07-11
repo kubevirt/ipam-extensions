@@ -46,6 +46,7 @@ import (
 
 	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
 	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
+	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -153,6 +154,11 @@ func main() {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+
+	if err = vmnetworkscontroller.NewVMReconciler(mgr).Setup(); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachine")
 		os.Exit(1)
 	}
 
