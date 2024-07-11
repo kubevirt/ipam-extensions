@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"k8s.io/utils/ptr"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,30 +58,25 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 	defer cancel()
 	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
-		r.Log.Info("could not retrieve VMI - will cleanup its IPAMClaims")
-		if err := r.Cleanup(request.NamespacedName); err != nil {
-			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
-		}
-		return controllerruntime.Result{}, nil
+		vmi = nil
 	} else if err != nil {
 		return controllerruntime.Result{}, err
 	}
 
-	var ownerInfo metav1.OwnerReference
-	vm := &virtv1.VirtualMachine{}
-	contextWithTimeout, cancel = context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); apierrors.IsNotFound(err) {
-		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
-		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
-	} else if err == nil {
-		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
-	} else {
-		return controllerruntime.Result{}, fmt.Errorf(
-			"error to get VMI %q corresponding VM: %w",
-			request.NamespacedName,
-			err,
-		)
+	vm, err := getOwningVM(ctx, r.Client, request.NamespacedName)
+	if err != nil {
+		return controllerruntime.Result{}, err
+	}
+
+	if shouldCleanFinalizers(vmi, vm) {
+		if err := r.Cleanup(request.NamespacedName); err != nil {
+			return controllerruntime.Result{}, fmt.Errorf("failed removing the IPAMClaims finalizer: %w", err)
+		}
+		return controllerruntime.Result{}, nil
+	}
+
+	if vmi == nil {
+		return controllerruntime.Result{}, nil
 	}
 
 	vmiNetworks, err := r.vmiNetworksClaimingIPAM(ctx, vmi)
@@ -87,6 +84,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 		return controllerruntime.Result{}, err
 	}
 
+	ownerInfo := ownerReferenceFor(vmi, vm)
 	for logicalNetworkName, netConfigName := range vmiNetworks {
 		claimKey := fmt.Sprintf("%s.%s", vmi.Name, logicalNetworkName)
 		ipamClaim := &ipamclaimsapi.IPAMClaim{
@@ -148,7 +146,7 @@ func onVMIPredicates() predicate.Funcs {
 			return true
 		},
 		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(event.GenericEvent) bool {
 			return false
@@ -226,5 +224,50 @@ func (r *VirtualMachineInstanceReconciler) Cleanup(vmiKey apitypes.NamespacedNam
 func ownedByVMLabel(vmiName string) client.MatchingLabels {
 	return map[string]string{
 		virtv1.VirtualMachineLabel: vmiName,
+	}
+}
+
+func shouldCleanFinalizers(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) bool {
+	if vm != nil {
+		// VMI is gone and VM is marked for deletion
+		return vmi == nil && vm.DeletionTimestamp != nil
+	} else {
+		// VMI is gone or VMI is marked for deletion, virt-launcher is gone
+		return vmi == nil || (vmi.DeletionTimestamp != nil && len(vmi.Status.ActivePods) == 0)
+	}
+}
+
+func ownerReferenceFor(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) metav1.OwnerReference {
+	var obj client.Object
+	if vm != nil {
+		obj = vm
+	} else {
+		obj = vmi
+	}
+
+	aPIVersion := obj.GetObjectKind().GroupVersionKind().Group + "/" + obj.GetObjectKind().GroupVersionKind().Version
+	return metav1.OwnerReference{
+		APIVersion:         aPIVersion,
+		Kind:               obj.GetObjectKind().GroupVersionKind().Kind,
+		Name:               obj.GetName(),
+		UID:                obj.GetUID(),
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
+	}
+}
+
+// Gets the owning VM if any. for simplicity it just try to fetch the VM,
+// even when the VMI exists, instead of parsing ownerReferences and handling differently the nil VMI case.
+func getOwningVM(ctx context.Context, c client.Client, name apitypes.NamespacedName) (*virtv1.VirtualMachine, error) {
+	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	vm := &virtv1.VirtualMachine{}
+	if err := c.Get(contextWithTimeout, name, vm); err == nil {
+		return vm, nil
+	} else if apierrors.IsNotFound(err) {
+		return nil, nil
+	} else {
+		return nil, fmt.Errorf("failed getting VM %q: %w", name, err)
 	}
 }
