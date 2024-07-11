@@ -73,6 +73,7 @@ function sync() {
     # Generate the manifest with the "sha256" to force kubernetes to reload the image
     sha=$(skopeo inspect --tls-verify=false docker://$img:$tag |jq -r .Digest)
     IMG=$img@$sha make deploy
+    ${KUBECTL} wait -n kubevirt-ipam-controller-system deployment kubevirt-ipam-controller-manager --for condition=Available --timeout 2m
 }
 
 
