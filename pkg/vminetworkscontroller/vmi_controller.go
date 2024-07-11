@@ -166,7 +166,7 @@ func (r *VirtualMachineInstanceReconciler) vmiNetworksClaimingIPAM(
 			continue
 		}
 
-		if net.Multus != nil {
+		if net.Multus != nil && !net.Multus.Default {
 			nadName := net.Multus.NetworkName
 			namespace := vmi.Namespace
 			namespaceAndName := strings.Split(nadName, "/")

@@ -136,8 +136,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		}
 	},
 		Entry("when the VM has an associated VMI pointing to an existing NAD", testConfig{
-			inputVM:          dummyVM(nadName),
-			inputVMI:         dummyVMI(nadName),
+			inputVM:          dummyVM(dummyVMISpec(nadName)),
+			inputVMI:         dummyVMI(dummyVMISpec(nadName)),
 			inputNAD:         dummyNAD(nadName),
 			expectedResponse: reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
@@ -153,15 +153,22 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 				},
 			},
 		}),
+		Entry("when the VM has an associated VMI pointing to an existing NAD but as multus default network", testConfig{
+			inputVM:            dummyVM(dummyVMIWithMultusDefaultNetworkSpec(nadName)),
+			inputVMI:           dummyVMI(dummyVMIWithMultusDefaultNetworkSpec(nadName)),
+			inputNAD:           dummyNAD(nadName),
+			expectedResponse:   reconcile.Result{},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{},
+		}),
 		Entry("when the VM has an associated VMI pointing to an existing NAD with an improper config", testConfig{
-			inputVM:       dummyVM(nadName),
-			inputVMI:      dummyVMI(nadName),
+			inputVM:       dummyVM(dummyVMISpec(nadName)),
+			inputVMI:      dummyVMI(dummyVMISpec(nadName)),
 			inputNAD:      dummyNADWrongFormat(nadName),
 			expectedError: fmt.Errorf("failed to extract the relevant NAD information"),
 		}),
 		Entry("the associated VMI exists but points to a NAD that doesn't exist", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  dummyVM(dummyVMISpec(nadName)),
+			inputVMI: dummyVMI(dummyVMISpec(nadName)),
 			expectedError: &errors.StatusError{
 				ErrStatus: metav1.Status{
 					Status:  "Failure",
@@ -202,8 +209,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			},
 		}),
 		Entry("everything is OK but there's already an IPAMClaim with this name", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  dummyVM(dummyVMISpec(nadName)),
+			inputVMI: dummyVMI(dummyVMISpec(nadName)),
 			inputNAD: dummyNAD(nadName),
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -215,8 +222,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
 		Entry("found an existing IPAMClaim for the same VM", testConfig{
-			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  decorateVMWithUID(dummyUID, dummyVM(dummyVMISpec(nadName))),
+			inputVMI: dummyVMI(dummyVMISpec(nadName)),
 			inputNAD: dummyNAD(nadName),
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -257,8 +264,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			},
 		}),
 		Entry("found an existing IPAMClaim for a VM with same name but different UID", testConfig{
-			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  decorateVMWithUID(dummyUID, dummyVM(dummyVMISpec(nadName))),
+			inputVMI: dummyVMI(dummyVMISpec(nadName)),
 			inputNAD: dummyNAD(nadName),
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -280,7 +287,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
 		Entry("a lonesome VMI (with no corresponding VM) is a valid migration use-case", testConfig{
-			inputVMI:         dummyVMI(nadName),
+			inputVMI:         dummyVMI(dummyVMISpec(nadName)),
 			inputNAD:         dummyNAD(nadName),
 			expectedResponse: reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
@@ -299,7 +306,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 	)
 })
 
-func dummyVM(nadName string) *virtv1.VirtualMachine {
+func dummyVM(vmiSpec virtv1.VirtualMachineInstanceSpec) *virtv1.VirtualMachine {
 	return &virtv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
@@ -307,19 +314,19 @@ func dummyVM(nadName string) *virtv1.VirtualMachine {
 		},
 		Spec: virtv1.VirtualMachineSpec{
 			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
-				Spec: dummyVMISpec(nadName),
+				Spec: vmiSpec,
 			},
 		},
 	}
 }
 
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
+func dummyVMI(vmiSpec virtv1.VirtualMachineInstanceSpec) *virtv1.VirtualMachineInstance {
 	return &virtv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
 			Namespace: "ns1",
 		},
-		Spec: dummyVMISpec(nadName),
+		Spec: vmiSpec,
 	}
 }
 
@@ -335,6 +342,22 @@ func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 				NetworkSource: virtv1.NetworkSource{
 					Multus: &virtv1.MultusNetwork{
 						NetworkName: nadName,
+					},
+				},
+			},
+		},
+	}
+}
+
+func dummyVMIWithMultusDefaultNetworkSpec(nadName string) virtv1.VirtualMachineInstanceSpec {
+	return virtv1.VirtualMachineInstanceSpec{
+		Networks: []virtv1.Network{
+			{
+				Name: "default_multus",
+				NetworkSource: virtv1.NetworkSource{
+					Multus: &virtv1.MultusNetwork{
+						NetworkName: nadName,
+						Default:     true,
 					},
 				},
 			},
