@@ -21,12 +21,16 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
@@ -61,7 +65,7 @@ var _ = Describe("Persistent IPs", func() {
 		})
 		Context("and a virtual machine using it is also created", func() {
 			BeforeEach(func() {
-				By("Creating VM using the nad")
+				By("Creating VM with secondary attachments")
 				Expect(testenv.Client.Create(context.Background(), vm)).To(Succeed())
 
 				By(fmt.Sprintf("Waiting for readiness at virtual machine %s", vm.Name))
@@ -98,12 +102,58 @@ var _ = Describe("Persistent IPs", func() {
 
 			})
 
-			It("should garbage collect IPAMClaims after virtual machine deletion", func() {
+			It("should garbage collect IPAMClaims after VM deletion", func() {
 				Expect(testenv.Client.Delete(context.Background(), vm)).To(Succeed())
 				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
 					WithTimeout(time.Minute).
 					WithPolling(time.Second).
 					Should(BeEmpty())
+			})
+
+			It("should garbage collect IPAMClaims after VM foreground deletion", func() {
+				Expect(testenv.Client.Delete(context.Background(), vm, foregroundDeleteOptions())).To(Succeed())
+				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					Should(BeEmpty())
+			})
+
+			When("the VM is stopped", func() {
+				BeforeEach(func() {
+					By("Invoking virtctl stop")
+					output, err := exec.Command("virtctl", "stop", "-n", td.Namespace, vmi.Name).CombinedOutput()
+					Expect(err).NotTo(HaveOccurred(), output)
+
+					By("Ensuring VM is not running")
+					Eventually(testenv.ThisVMI(vmi), 360*time.Second, 1*time.Second).Should(
+						SatisfyAll(
+							Not(testenv.BeCreated()),
+							Not(testenv.BeReady()),
+						))
+
+					Consistently(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+						WithTimeout(time.Minute).
+						WithPolling(time.Second).
+						ShouldNot(BeEmpty())
+				})
+
+				It("should garbage collect IPAMClaims after VM is deleted", func() {
+					By("Delete VM and check ipam claims are gone")
+					Expect(testenv.Client.Delete(context.Background(), vm)).To(Succeed())
+					Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+						WithTimeout(time.Minute).
+						WithPolling(time.Second).
+						Should(BeEmpty())
+				})
+
+				It("should garbage collect IPAMClaims after VM is foreground deleted", func() {
+					By("Foreground delete VM and check ipam claims are gone")
+					Expect(testenv.Client.Delete(context.Background(), vm, foregroundDeleteOptions())).To(Succeed())
+					Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+						WithTimeout(time.Minute).
+						WithPolling(time.Second).
+						Should(BeEmpty())
+				})
 			})
 
 			It("should keep ips after restart", func() {
@@ -127,6 +177,55 @@ var _ = Describe("Persistent IPs", func() {
 					Should(testenv.ContainConditionVMIReady())
 
 				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(networkInterfaceName, ConsistOf(vmiIPsBeforeRestart)))
+			})
+		})
+
+		When("requested for a VM whose VMI has extra finalizers", func() {
+			const testFinalizer = "testFinalizer"
+
+			BeforeEach(func() {
+				By("Adding VMI custom finalizer to control VMI deletion")
+				vm.Spec.Template.ObjectMeta.Finalizers = []string{testFinalizer}
+
+				By("Creating VM with secondary attachments")
+				Expect(testenv.Client.Create(context.Background(), vm)).To(Succeed())
+
+				By(fmt.Sprintf("Waiting for readiness at virtual machine %s", vm.Name))
+				Eventually(testenv.ThisVMReadiness(vm)).
+					WithPolling(time.Second).
+					WithTimeout(5 * time.Minute).
+					Should(BeTrue())
+
+				By("Wait for IPAMClaim to get created")
+				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					ShouldNot(BeEmpty())
+
+				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
+
+				Expect(vmi.Status.Interfaces).NotTo(BeEmpty())
+				Expect(vmi.Status.Interfaces[0].IPs).NotTo(BeEmpty())
+			})
+
+			It("should garbage collect IPAMClaims after VM foreground deletion, only after VMI is gone", func() {
+				By("Foreground delete the VM, and validate the IPAMClaim isnt deleted since VMI exists")
+				Expect(testenv.Client.Delete(context.Background(), vm, foregroundDeleteOptions())).To(Succeed())
+				Consistently(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					ShouldNot(BeEmpty())
+
+				By("Remove the finalizer (all the other are already deleted in this stage)")
+				patchData, err := removeFinalizersPatch()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(testenv.Client.Patch(context.TODO(), vmi, client.RawPatch(types.MergePatchType, patchData))).To(Succeed())
+
+				By("Check IPAMClaims are now deleted")
+				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					Should(BeEmpty())
 			})
 		})
 
@@ -163,8 +262,16 @@ var _ = Describe("Persistent IPs", func() {
 
 			})
 
-			It("should garbage collect IPAMClaims after virtual machine deletion", func() {
+			It("should garbage collect IPAMClaims after VMI deletion", func() {
 				Expect(testenv.Client.Delete(context.Background(), vmi)).To(Succeed())
+				Eventually(testenv.IPAMClaimsFromNamespace(vmi.Namespace)).
+					WithTimeout(time.Minute).
+					WithPolling(time.Second).
+					Should(BeEmpty())
+			})
+
+			It("should garbage collect IPAMClaims after VMI foreground deletion", func() {
+				Expect(testenv.Client.Delete(context.Background(), vmi, foregroundDeleteOptions())).To(Succeed())
 				Eventually(testenv.IPAMClaimsFromNamespace(vmi.Namespace)).
 					WithTimeout(time.Minute).
 					WithPolling(time.Second).
@@ -174,3 +281,19 @@ var _ = Describe("Persistent IPs", func() {
 
 	})
 })
+
+func foregroundDeleteOptions() *client.DeleteOptions {
+	foreground := metav1.DeletePropagationForeground
+	return &client.DeleteOptions{
+		PropagationPolicy: &foreground,
+	}
+}
+
+func removeFinalizersPatch() ([]byte, error) {
+	patch := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"finalizers": []string{},
+		},
+	}
+	return json.Marshal(patch)
+}

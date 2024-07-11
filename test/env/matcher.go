@@ -72,6 +72,22 @@ func BeRestarted(oldUID types.UID) gomegatypes.GomegaMatcher {
 	}))
 }
 
+func BeCreated() gomegatypes.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"Created": BeTrue(),
+		}),
+	}))
+}
+
+func BeReady() gomegatypes.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"Ready": BeTrue(),
+		}),
+	}))
+}
+
 func ContainConditionVMIReady() gomegatypes.GomegaMatcher {
 	return WithTransform(vmiStatusConditions,
 		ContainElement(SatisfyAll(
