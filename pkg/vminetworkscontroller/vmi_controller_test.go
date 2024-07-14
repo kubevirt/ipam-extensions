@@ -26,6 +26,7 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 
+	"github.com/kubevirt/ipam-extensions/pkg/testobjects"
 	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
@@ -137,13 +138,13 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			ipamClaimList := &ipamclaimsapi.IPAMClaimList{}
 
 			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, claims.OwnedByVMLabel(vmName))).To(Succeed())
-			Expect(ipamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
+			Expect(testobjects.IpamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
 	},
 		Entry("when the VM has an associated VMI pointing to an existing NAD", testConfig{
-			inputVM:          dummyVM(nadName),
-			inputVMI:         dummyVMI(nadName),
-			inputNAD:         dummyNAD(nadName),
+			inputVM:          testobjects.DummyVM(nadName),
+			inputVMI:         testobjects.DummyVMI(nadName),
+			inputNAD:         testobjects.DummyNAD(nadName),
 			expectedResponse: reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
@@ -163,14 +164,14 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			},
 		}),
 		Entry("when the VM has an associated VMI pointing to an existing NAD with an improper config", testConfig{
-			inputVM:       dummyVM(nadName),
-			inputVMI:      dummyVMI(nadName),
+			inputVM:       testobjects.DummyVM(nadName),
+			inputVMI:      testobjects.DummyVMI(nadName),
 			inputNAD:      dummyNADWrongFormat(nadName),
 			expectedError: fmt.Errorf("failed to extract the relevant NAD information"),
 		}),
 		Entry("the associated VMI exists but points to a NAD that doesn't exist", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
 			expectedError: &errors.StatusError{
 				ErrStatus: metav1.Status{
 					Status:  "Failure",
@@ -211,9 +212,9 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			},
 		}),
 		Entry("everything is OK but there's already an IPAMClaim with this name", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
@@ -224,9 +225,9 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
 		Entry("found an existing IPAMClaim for the same VM", testConfig{
-			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
-			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputVM:  decorateVMWithUID(dummyUID, testobjects.DummyVM(nadName)),
+			inputVMI: testobjects.DummyVMI(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
@@ -266,9 +267,9 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			},
 		}),
 		Entry("found an existing IPAMClaim for a VM with same name but different UID", testConfig{
-			inputVM:  decorateVMWithUID(dummyUID, dummyVM(nadName)),
-			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputVM:  decorateVMWithUID(dummyUID, testobjects.DummyVM(nadName)),
+			inputVMI: testobjects.DummyVMI(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
@@ -289,8 +290,8 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
 		}),
 		Entry("a lonesome VMI (with no corresponding VM) is a valid migration use-case", testConfig{
-			inputVMI:         dummyVMI(nadName),
-			inputNAD:         dummyNAD(nadName),
+			inputVMI:         testobjects.DummyVMI(nadName),
+			inputNAD:         testobjects.DummyNAD(nadName),
 			expectedResponse: reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
@@ -312,60 +313,9 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 	)
 })
 
-func dummyVM(nadName string) *virtv1.VirtualMachine {
-	return &virtv1.VirtualMachine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm1",
-			Namespace: "ns1",
-		},
-		Spec: virtv1.VirtualMachineSpec{
-			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
-				Spec: dummyVMISpec(nadName),
-			},
-		},
-	}
-}
-
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
-	return &virtv1.VirtualMachineInstance{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm1",
-			Namespace: "ns1",
-		},
-		Spec: dummyVMISpec(nadName),
-	}
-}
-
-func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
-	return virtv1.VirtualMachineInstanceSpec{
-		Networks: []virtv1.Network{
-			{
-				Name:          "podnet",
-				NetworkSource: virtv1.NetworkSource{Pod: &virtv1.PodNetwork{}},
-			},
-			{
-				Name: "randomnet",
-				NetworkSource: virtv1.NetworkSource{
-					Multus: &virtv1.MultusNetwork{
-						NetworkName: nadName,
-					},
-				},
-			},
-		},
-	}
-}
-
-func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
-	namespaceAndName := strings.Split(nadName, "/")
-	return &nadv1.NetworkAttachmentDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespaceAndName[0],
-			Name:      namespaceAndName[1],
-		},
-		Spec: nadv1.NetworkAttachmentDefinitionSpec{
-			Config: `{"name": "goodnet", "allowPersistentIPs": true}`,
-		},
-	}
+func decorateVMWithUID(uid string, vm *virtv1.VirtualMachine) *virtv1.VirtualMachine {
+	vm.UID = apitypes.UID(uid)
+	return vm
 }
 
 func dummyNADWrongFormat(nadName string) *nadv1.NetworkAttachmentDefinition {
@@ -379,16 +329,4 @@ func dummyNADWrongFormat(nadName string) *nadv1.NetworkAttachmentDefinition {
 			Config: "this is not JSON !!!",
 		},
 	}
-}
-
-func ipamClaimsCleaner(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaim {
-	for i := range ipamClaims {
-		ipamClaims[i].ObjectMeta.ResourceVersion = ""
-	}
-	return ipamClaims
-}
-
-func decorateVMWithUID(uid string, vm *virtv1.VirtualMachine) *virtv1.VirtualMachine {
-	vm.UID = apitypes.UID(uid)
-	return vm
 }

@@ -29,6 +29,8 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 
+	"github.com/kubevirt/ipam-extensions/pkg/testobjects"
+
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
@@ -112,9 +114,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 		)
 	},
 		Entry("pod not requesting secondary attachments is accepted", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			inputPod: &corev1.Pod{},
 			expectedAdmissionResponse: admission.Response{
 				AdmissionResponse: admissionv1.AdmissionResponse{
@@ -127,9 +129,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			},
 		}),
 		Entry("vm launcher pod with an attachment to a network with persistent IPs enabled requests an IPAMClaim", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			inputPod: dummyPodForVM(nadName, vmName),
 			expectedAdmissionResponse: admission.Response{
 				AdmissionResponse: admissionv1.AdmissionResponse{
@@ -146,8 +148,8 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			},
 		}),
 		Entry("vm launcher pod with an attachment to a network *without* persistentIPs is accepted", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
 			inputNAD: dummyNADWithoutPersistentIPs(nadName),
 			inputPod: dummyPodForVM(nadName, vmName),
 			expectedAdmissionResponse: admission.Response{
@@ -161,7 +163,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			},
 		}),
 		Entry("pod not belonging to a VM with an attachment to a network with persistent IPs enabled is accepted", testConfig{
-			inputNAD: dummyNAD(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			inputPod: dummyPod(nadName),
 			expectedAdmissionResponse: admission.Response{
 				AdmissionResponse: admissionv1.AdmissionResponse{
@@ -174,9 +176,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			},
 		}),
 		Entry("pod requesting an attachment via a NAD with an invalid configuration throws a BAD REQUEST", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
-			inputNAD: dummyNAD(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			inputPod: pod("{not json}", nil),
 			expectedAdmissionResponse: admission.Response{
 				AdmissionResponse: admissionv1.AdmissionResponse{
@@ -189,8 +191,8 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			},
 		}),
 		Entry("pod requesting an attachment via a NAD with an invalid configuration throws a BAD REQUEST", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName),
+			inputVM:  testobjects.DummyVM(nadName),
+			inputVMI: testobjects.DummyVMI(nadName),
 			inputPod: dummyPodForVM(nadName, vmName),
 			expectedAdmissionResponse: admission.Response{
 				AdmissionResponse: admissionv1.AdmissionResponse{
@@ -203,7 +205,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			},
 		}),
 		Entry("launcher pod whose VMI is not found throws a server error", testConfig{
-			inputNAD: dummyNAD(nadName),
+			inputNAD: testobjects.DummyNAD(nadName),
 			inputPod: dummyPodForVM(nadName, vmName),
 			expectedAdmissionResponse: admission.Response{
 				AdmissionResponse: admissionv1.AdmissionResponse{
@@ -217,62 +219,6 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 		}),
 	)
 })
-
-func dummyVM(nadName string) *virtv1.VirtualMachine {
-	return &virtv1.VirtualMachine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm1",
-			Namespace: "ns1",
-		},
-		Spec: virtv1.VirtualMachineSpec{
-			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
-				Spec: dummyVMISpec(nadName),
-			},
-		},
-	}
-}
-
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
-	return &virtv1.VirtualMachineInstance{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm1",
-			Namespace: "ns1",
-		},
-		Spec: dummyVMISpec(nadName),
-	}
-}
-
-func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
-	return virtv1.VirtualMachineInstanceSpec{
-		Networks: []virtv1.Network{
-			{
-				Name:          "podnet",
-				NetworkSource: virtv1.NetworkSource{Pod: &virtv1.PodNetwork{}},
-			},
-			{
-				Name: "randomnet",
-				NetworkSource: virtv1.NetworkSource{
-					Multus: &virtv1.MultusNetwork{
-						NetworkName: nadName,
-					},
-				},
-			},
-		},
-	}
-}
-
-func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
-	namespaceAndName := strings.Split(nadName, "/")
-	return &nadv1.NetworkAttachmentDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespaceAndName[0],
-			Name:      namespaceAndName[1],
-		},
-		Spec: nadv1.NetworkAttachmentDefinitionSpec{
-			Config: `{"name": "goodnet", "allowPersistentIPs": true}`,
-		},
-	}
-}
 
 func dummyNADWithoutPersistentIPs(nadName string) *nadv1.NetworkAttachmentDefinition {
 	namespaceAndName := strings.Split(nadName, "/")

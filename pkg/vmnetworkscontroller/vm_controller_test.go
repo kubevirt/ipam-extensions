@@ -2,22 +2,17 @@ package vmnetworkscontroller_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	virtv1 "kubevirt.io/api/core/v1"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apitypes "k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-
-	"k8s.io/utils/ptr"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,6 +26,7 @@ import (
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	"github.com/kubevirt/ipam-extensions/pkg/claims"
+	"github.com/kubevirt/ipam-extensions/pkg/testobjects"
 	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
 )
 
@@ -129,118 +125,35 @@ var _ = Describe("VM IPAM controller", Serial, func() {
 			ipamClaimList := &ipamclaimsapi.IPAMClaimList{}
 
 			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, claims.OwnedByVMLabel(vmName))).To(Succeed())
-			Expect(ipamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
+			Expect(testobjects.IpamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
 	},
 		Entry("when the VM is marked for deletion and its VMI is gone", testConfig{
-			inputVM:           dummyMarkedForDeletionVM(nadName),
+			inputVM:           testobjects.DummyMarkedForDeletionVM(nadName),
 			inputVMI:          nil,
-			existingIPAMClaim: dummyIPAMClaimWithFinalizer(namespace, vmName),
+			existingIPAMClaim: testobjects.DummyIPAMClaimWithFinalizer(namespace, vmName),
 			expectedResponse:  reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
-				*dummyIPAMClaimmWithoutFinalizer(namespace, vmName),
+				*testobjects.DummyIPAMClaimWithoutFinalizer(namespace, vmName),
 			},
 		}),
 		Entry("when the VM is gone", testConfig{
 			inputVM:           nil,
 			inputVMI:          nil,
-			existingIPAMClaim: dummyIPAMClaimWithFinalizer(namespace, vmName),
+			existingIPAMClaim: testobjects.DummyIPAMClaimWithFinalizer(namespace, vmName),
 			expectedResponse:  reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
-				*dummyIPAMClaimmWithoutFinalizer(namespace, vmName),
+				*testobjects.DummyIPAMClaimWithoutFinalizer(namespace, vmName),
 			},
 		}),
 		Entry("when the VM is marked for deletion and its VMI still exist", testConfig{
-			inputVM:           dummyMarkedForDeletionVM(nadName),
-			inputVMI:          dummyVMI(nadName),
-			existingIPAMClaim: dummyIPAMClaimWithFinalizer(namespace, vmName),
+			inputVM:           testobjects.DummyMarkedForDeletionVM(nadName),
+			inputVMI:          testobjects.DummyVMI(nadName),
+			existingIPAMClaim: testobjects.DummyIPAMClaimWithFinalizer(namespace, vmName),
 			expectedResponse:  reconcile.Result{},
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
-				*dummyIPAMClaimWithFinalizer(namespace, vmName),
+				*testobjects.DummyIPAMClaimWithFinalizer(namespace, vmName),
 			},
 		}),
 	)
 })
-
-func dummyMarkedForDeletionVM(nadName string) *virtv1.VirtualMachine {
-	vm := dummyVM(nadName)
-	vm.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	vm.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
-
-	return vm
-}
-
-func dummyVM(nadName string) *virtv1.VirtualMachine {
-	return &virtv1.VirtualMachine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm1",
-			Namespace: "ns1",
-		},
-		Spec: virtv1.VirtualMachineSpec{
-			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
-				Spec: dummyVMISpec(nadName),
-			},
-		},
-	}
-}
-
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
-	return &virtv1.VirtualMachineInstance{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm1",
-			Namespace: "ns1",
-		},
-		Spec: dummyVMISpec(nadName),
-	}
-}
-
-func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
-	return virtv1.VirtualMachineInstanceSpec{
-		Networks: []virtv1.Network{
-			{
-				Name:          "podnet",
-				NetworkSource: virtv1.NetworkSource{Pod: &virtv1.PodNetwork{}},
-			},
-			{
-				Name: "randomnet",
-				NetworkSource: virtv1.NetworkSource{
-					Multus: &virtv1.MultusNetwork{
-						NetworkName: nadName,
-					},
-				},
-			},
-		},
-	}
-}
-
-func ipamClaimsCleaner(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaim {
-	for i := range ipamClaims {
-		ipamClaims[i].ObjectMeta.ResourceVersion = ""
-	}
-	return ipamClaims
-}
-
-func dummyIPAMClaimWithFinalizer(namespace, vmName string) *ipamclaimsapi.IPAMClaim {
-	ipamClaim := dummyIPAMClaimmWithoutFinalizer(namespace, vmName)
-	ipamClaim.Finalizers = []string{claims.KubevirtVMFinalizer}
-	return ipamClaim
-}
-
-func dummyIPAMClaimmWithoutFinalizer(namespace, vmName string) *ipamclaimsapi.IPAMClaim {
-	return &ipamclaimsapi.IPAMClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
-			Namespace: namespace,
-			Labels:    claims.OwnedByVMLabel(vmName),
-			OwnerReferences: []metav1.OwnerReference{{
-				Name:               vmName,
-				Kind:               "VirtualMachine",
-				Controller:         ptr.To(true),
-				BlockOwnerDeletion: ptr.To(true),
-			}},
-		},
-		Spec: ipamclaimsapi.IPAMClaimSpec{
-			Network: "goodnet",
-		},
-	}
-}
