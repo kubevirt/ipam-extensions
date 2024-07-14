@@ -1,4 +1,4 @@
-package vminetworkscontroller
+package vminetworkscontroller_test
 
 import (
 	"context"
@@ -25,6 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	virtv1 "kubevirt.io/api/core/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -121,7 +123,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
 		Expect(err).NotTo(HaveOccurred())
 
-		reconcileVMI := NewVMIReconciler(mgr)
+		reconcileVMI := vminetworkscontroller.NewVMIReconciler(mgr)
 		if config.expectedError != nil {
 			_, err := reconcileVMI.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey})
 			Expect(err).To(MatchError(config.expectedError))
