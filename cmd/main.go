@@ -17,9 +17,13 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -29,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
@@ -41,9 +46,16 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 
+	"k8s.io/apimachinery/pkg/types"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
+	"github.com/kubevirt/ipam-extensions/pkg/claims"
 	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
 	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
 	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
@@ -176,6 +188,13 @@ func main() {
 		&webhook.Admission{Handler: ipamclaimswebhook.NewIPAMClaimsValet(mgr)},
 	)
 
+	go func() {
+		if err := purgeFinalizerForMissingOwners(mgr.GetClient()); err != nil {
+			setupLog.Error(err, "problem purging finalizers")
+			os.Exit(1)
+		}
+	}()
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
@@ -185,4 +204,57 @@ func main() {
 
 func virtLauncherSelector() labels.Selector {
 	return labels.SelectorFromSet(map[string]string{virtv1.AppLabel: "virt-launcher"})
+}
+
+func purgeFinalizerForMissingOwners(c client.Client) error {
+	ipamClaims := &ipamclaimsapi.IPAMClaimList{}
+	err := wait.PollUntilContextTimeout(
+		context.Background(), 5*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
+			if err := c.List(ctx, ipamClaims); err != nil {
+				if strings.Contains(err.Error(), "the cache is not started, can not read objects") {
+					fmt.Println("Cache not started, retrying...")
+					return false, nil
+				}
+				return false, fmt.Errorf("could not get list of IPAMClaims: %w", err)
+			}
+			return true, nil
+		})
+
+	if err != nil {
+		return err
+	}
+
+	for _, claim := range ipamClaims.Items {
+		kind := claim.OwnerReferences[0].Kind
+		if len(claim.OwnerReferences) != 1 || (kind != "VirtualMachine" && kind != "VirtualMachineInstance") {
+			continue
+		}
+
+		removedFinalizer := controllerutil.RemoveFinalizer(&claim, claims.KubevirtVMFinalizer)
+		if removedFinalizer {
+			var resource client.Object
+			switch kind {
+			case "VirtualMachine":
+				resource = &virtv1.VirtualMachine{}
+			case "VirtualMachineInstance":
+				resource = &virtv1.VirtualMachineInstance{}
+			}
+
+			namespacedName := types.NamespacedName{Namespace: claim.Namespace, Name: claim.OwnerReferences[0].Name}
+			err := c.Get(context.Background(), namespacedName, resource)
+			if err == nil {
+				continue
+			} else if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("could not get resource: %w", err)
+			}
+
+			if err := c.Update(context.Background(), &claim, &client.UpdateOptions{}); err != nil {
+				return client.IgnoreNotFound(err)
+			}
+
+			setupLog.Info("Removed finalizer from ipam claim, owner", kind, namespacedName.Namespace+"/"+namespacedName.Name)
+		}
+	}
+
+	return nil
 }
