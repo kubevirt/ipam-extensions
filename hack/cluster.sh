@@ -64,8 +64,9 @@ function down() {
 
 function sync() {
     local img=localhost:5000/kubevirt-ipam-controller
+    local passt_img=localhost:5000/kubevirt-passt-binding
     local tag=latest
-    IMG=$img:$tag make \
+    IMG=$img:$tag PASST_IMG=$passt_img:$tag make \
         build \
         docker-build \
         docker-push
@@ -74,8 +75,37 @@ function sync() {
     sha=$(skopeo inspect --tls-verify=false docker://$img:$tag |jq -r .Digest)
     IMG=$img@$sha make deploy
     ${KUBECTL} wait -n kubevirt-ipam-controller-system deployment kubevirt-ipam-controller-manager --for condition=Available --timeout 2m
+    
+    passt_img_sha=$(skopeo inspect --tls-verify=false docker://$passt_img| jq -r .Digest)
+
+    kubectl patch kubevirts -n kubevirt kubevirt --type=json -p="[{\"op\": \"add\", \"path\": \"/spec/configuration/network\",   \"value\": {
+          \"binding\": {
+              \"passt\": {
+                  \"sidecarImage\": \"${passt_img}@${passt_img_sha}\",
+                  \"migration\": {
+                      \"method\": \"link-refresh\"
+                  }
+              }
+          }
+      }}]"
+
+    kubectl apply -f - <<EOF
+---
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+spec:
+  configuration:
+    developerConfiguration:
+      featureGates:
+        - NetworkBindingPlugins
+EOF
+
+    for node in $(kubectl get node --no-headers  -o custom-columns=":metadata.name"); do
+        docker cp passt/bin/kubevirt-passt-binding $node:/opt/cni/bin/kubevirt-passt-binding
+    done
 }
-
-
 
 $op $@

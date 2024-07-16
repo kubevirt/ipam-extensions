@@ -3,6 +3,6 @@ resources:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: controller
-  newName: ghcr.io/kubevirt/ipam-controller
-  newTag: latest
+- digest: sha256:36920f15205ef980969aacfd3e956d2e6370fe22e8c3641c8a57552f1b95c3ee
+  name: controller
+  newName: localhost:5000/kubevirt-ipam-controller
