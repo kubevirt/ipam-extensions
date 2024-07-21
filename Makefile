@@ -1,6 +1,8 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= kubevirt-ipam-controller:latest
+PASST_IMG ?= kubevirt/passt-binding-cni:latest
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.29.0
 
@@ -100,10 +102,13 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
+	export KUBEVIRT_VERSION=$$(curl -sSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt) && \
+	$(CONTAINER_TOOL) build --build-arg KUBEVIRT_VERSION=$${KUBEVIRT_VERSION} -f passt/Dockerfile -t ${PASST_IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+	$(CONTAINER_TOOL) push ${PASST_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:

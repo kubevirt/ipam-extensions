@@ -64,8 +64,9 @@ function down() {
 
 function sync() {
     local img=localhost:5000/kubevirt-ipam-controller
+    local passt_img=localhost:5000/passt-binding-cni
     local tag=latest
-    IMG=$img:$tag make \
+    IMG=$img:$tag PASST_IMG=$passt_img:$tag make \
         build \
         docker-build \
         docker-push
