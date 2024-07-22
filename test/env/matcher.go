@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	v1 "kubevirt.io/api/core/v1"
 
 	ipamclaimsv1alpha1 "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 )
@@ -66,7 +65,7 @@ func BeRestarted(oldUID types.UID) gomegatypes.GomegaMatcher {
 			"UID": Not(Equal(oldUID)),
 		}),
 		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
-			"Phase": Equal(v1.Running),
+			"Phase": Equal(kubevirtv1.Running),
 		}),
 	}))
 }
