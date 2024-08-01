@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,6 +15,7 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,11 +29,13 @@ import (
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/claims"
 )
 
 func TestController(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Controller test suite")
+	RunSpecs(t, "VMI Controller test suite")
 }
 
 var (
@@ -48,7 +52,9 @@ type testConfig struct {
 	expectedIPAMClaims []ipamclaimsapi.IPAMClaim
 }
 
-var _ = Describe("vmi IPAM controller", Serial, func() {
+const dummyUID = "dummyUID"
+
+var _ = Describe("VMI IPAM controller", Serial, func() {
 	BeforeEach(func() {
 		log.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 		testEnv = &envtest.Environment{}
@@ -69,7 +75,6 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		nadName       = "ns1/superdupernad"
 		namespace     = "ns1"
 		vmName        = "vm1"
-		dummyUID      = "dummyUID"
 		unexpectedUID = "unexpectedUID"
 	)
 
@@ -118,20 +123,20 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
 		Expect(err).NotTo(HaveOccurred())
 
-		reconcileMachine := NewVMIReconciler(mgr)
+		vmiReconciler := NewVMIReconciler(mgr)
 		if config.expectedError != nil {
-			_, err := reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey})
+			_, err := vmiReconciler.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey})
 			Expect(err).To(MatchError(config.expectedError))
 		} else {
 			Expect(
-				reconcileMachine.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey}),
+				vmiReconciler.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey}),
 			).To(Equal(config.expectedResponse))
 		}
 
 		if len(config.expectedIPAMClaims) > 0 {
 			ipamClaimList := &ipamclaimsapi.IPAMClaimList{}
 
-			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, ownedByVMLabel(vmName))).To(Succeed())
+			Expect(mgr.GetClient().List(context.Background(), ipamClaimList, claims.OwnedByVMLabel(vmName))).To(Succeed())
 			Expect(ipamClaimsCleaner(ipamClaimList.Items...)).To(ConsistOf(config.expectedIPAMClaims))
 		}
 	},
@@ -143,11 +148,17 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:            fmt.Sprintf("%s.%s", vmName, "randomnet"),
-						Namespace:       namespace,
-						Finalizers:      []string{kubevirtVMFinalizer},
-						Labels:          ownedByVMLabel(vmName),
-						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
+						Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+						Namespace:  namespace,
+						Finalizers: []string{claims.KubevirtVMFinalizer},
+						Labels:     claims.OwnedByVMLabel(vmName),
+						OwnerReferences: []metav1.OwnerReference{{
+							APIVersion:         "kubevirt.io/v1",
+							Kind:               "VirtualMachine",
+							Name:               vmName,
+							Controller:         ptr.To(true),
+							BlockOwnerDeletion: ptr.To(true)},
+						},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
 				},
@@ -186,14 +197,14 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 		Entry("the VMI does not exist on the datastore - it might have been deleted in the meantime", testConfig{
 			expectedResponse: reconcile.Result{},
 		}),
-		Entry("the VMI was deleted, thus the existing IPAMClaims finalizers must be removed", testConfig{
+		Entry("the VMI was deleted (VM doesnt exists as well), thus IPAMClaims finalizers must be removed", testConfig{
 			expectedResponse: reconcile.Result{},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
 					Namespace:  namespace,
-					Finalizers: []string{kubevirtVMFinalizer},
-					Labels:     ownedByVMLabel(vmName),
+					Finalizers: []string{claims.KubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
@@ -202,7 +213,116 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "vm1.randomnet",
 						Namespace: "ns1",
-						Labels:    ownedByVMLabel(vmName),
+						Labels:    claims.OwnedByVMLabel(vmName),
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+				},
+			},
+		}),
+		Entry("the VM was stopped, thus the existing IPAMClaims finalizers should be kept", testConfig{
+			inputVM:          dummyVM(dummyVMISpec(nadName)),
+			expectedResponse: reconcile.Result{},
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace:  namespace,
+					Finalizers: []string{claims.KubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "vm1.randomnet",
+						Namespace:  "ns1",
+						Finalizers: []string{claims.KubevirtVMFinalizer},
+						Labels:     claims.OwnedByVMLabel(vmName),
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+				},
+			},
+		}),
+		Entry("standalone VMI, marked for deletion, without pods, thus IPAMClaims finalizers must be removed", testConfig{
+			inputVMI:         dummyMarkedForDeletionVMI(nadName),
+			expectedResponse: reconcile.Result{},
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace:  namespace,
+					Finalizers: []string{claims.KubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "vm1.randomnet",
+						Namespace: "ns1",
+						Labels:    claims.OwnedByVMLabel(vmName),
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+				},
+			},
+		}),
+		Entry("standalone VMI which is marked for deletion, with active pods, should keep IPAMClaims finalizers", testConfig{
+			inputVMI:         dummyMarkedForDeletionVMIWithActivePods(nadName),
+			inputNAD:         dummyNAD(nadName),
+			expectedResponse: reconcile.Result{},
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace:  namespace,
+					Finalizers: []string{claims.KubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+					OwnerReferences: []metav1.OwnerReference{{
+						Name:               vmName,
+						UID:                dummyUID,
+						Kind:               "VirtualMachineInstance",
+						Controller:         ptr.To(true),
+						BlockOwnerDeletion: ptr.To(true),
+					}},
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "vm1.randomnet",
+						Namespace:  "ns1",
+						Finalizers: []string{claims.KubevirtVMFinalizer},
+						Labels:     claims.OwnedByVMLabel(vmName),
+						OwnerReferences: []metav1.OwnerReference{{
+							Name:               vmName,
+							UID:                dummyUID,
+							Kind:               "VirtualMachineInstance",
+							Controller:         ptr.To(true),
+							BlockOwnerDeletion: ptr.To(true),
+						}},
+					},
+					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+				},
+			},
+		}),
+		Entry("VM which is marked for deletion, without VMI, thus IPAMClaims finalizers must be removed", testConfig{
+			inputVM:          dummyMarkedForDeletionVM(nadName),
+			expectedResponse: reconcile.Result{},
+			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Namespace:  namespace,
+					Finalizers: []string{claims.KubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+				},
+				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
+			},
+			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "vm1.randomnet",
+						Namespace: "ns1",
+						Labels:    claims.OwnedByVMLabel(vmName),
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
@@ -237,8 +357,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 							UID:        dummyUID,
 						},
 					},
-					Labels:     ownedByVMLabel(vmName),
-					Finalizers: []string{kubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+					Finalizers: []string{claims.KubevirtVMFinalizer},
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
@@ -248,7 +368,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "vm1.randomnet",
 						Namespace: "ns1",
-						Labels:    ownedByVMLabel(vmName),
+						Labels:    claims.OwnedByVMLabel(vmName),
 						OwnerReferences: []metav1.OwnerReference{
 							{
 								APIVersion: "v1",
@@ -257,7 +377,7 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 								UID:        dummyUID,
 							},
 						},
-						Finalizers: []string{kubevirtVMFinalizer},
+						Finalizers: []string{claims.KubevirtVMFinalizer},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 				},
@@ -279,8 +399,8 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 							UID:        unexpectedUID,
 						},
 					},
-					Labels:     ownedByVMLabel(vmName),
-					Finalizers: []string{kubevirtVMFinalizer},
+					Labels:     claims.OwnedByVMLabel(vmName),
+					Finalizers: []string{claims.KubevirtVMFinalizer},
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
@@ -293,11 +413,17 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:            "vm1.randomnet",
-						Namespace:       "ns1",
-						Labels:          ownedByVMLabel(vmName),
-						Finalizers:      []string{kubevirtVMFinalizer},
-						OwnerReferences: []metav1.OwnerReference{{Name: vmName}},
+						Name:       "vm1.randomnet",
+						Namespace:  "ns1",
+						Labels:     claims.OwnedByVMLabel(vmName),
+						Finalizers: []string{claims.KubevirtVMFinalizer},
+						OwnerReferences: []metav1.OwnerReference{{
+							APIVersion:         "kubevirt.io/v1",
+							Kind:               "VirtualMachineInstance",
+							Name:               vmName,
+							Controller:         ptr.To(true),
+							BlockOwnerDeletion: ptr.To(true)},
+						},
 					},
 					Spec: ipamclaimsapi.IPAMClaimSpec{Network: "goodnet"},
 				},
@@ -308,6 +434,10 @@ var _ = Describe("vmi IPAM controller", Serial, func() {
 
 func dummyVM(vmiSpec virtv1.VirtualMachineInstanceSpec) *virtv1.VirtualMachine {
 	return &virtv1.VirtualMachine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kubevirt.io/v1",
+			Kind:       "VirtualMachine",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
 			Namespace: "ns1",
@@ -322,6 +452,10 @@ func dummyVM(vmiSpec virtv1.VirtualMachineInstanceSpec) *virtv1.VirtualMachine {
 
 func dummyVMI(vmiSpec virtv1.VirtualMachineInstanceSpec) *virtv1.VirtualMachineInstance {
 	return &virtv1.VirtualMachineInstance{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kubevirt.io/v1",
+			Kind:       "VirtualMachineInstance",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
 			Namespace: "ns1",
@@ -402,3 +536,98 @@ func decorateVMWithUID(uid string, vm *virtv1.VirtualMachine) *virtv1.VirtualMac
 	vm.UID = apitypes.UID(uid)
 	return vm
 }
+func dummyMarkedForDeletionVMI(nadName string) *virtv1.VirtualMachineInstance {
+	vmi := dummyVMI(dummyVMISpec(nadName))
+	vmi.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	vmi.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+
+	return vmi
+}
+
+func dummyMarkedForDeletionVMIWithActivePods(nadName string) *virtv1.VirtualMachineInstance {
+	vmi := dummyVMI(dummyVMISpec(nadName))
+	vmi.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	vmi.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+
+	vmi.Status.ActivePods = map[apitypes.UID]string{"podUID": "dummyNodeName"}
+	vmi.UID = apitypes.UID(dummyUID)
+
+	return vmi
+}
+
+func dummyMarkedForDeletionVM(nadName string) *virtv1.VirtualMachine {
+	vm := dummyVM(dummyVMISpec(nadName))
+	vm.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	vm.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+
+	return vm
+}
+
+var _ = Describe("shouldCleanFinalizers", func() {
+	DescribeTable("should determine if finalizers should be cleaned up",
+		func(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine, expectedResult bool) {
+			Expect(shouldCleanFinalizers(vmi, vm)).To(Equal(expectedResult))
+		},
+		Entry("VM exist, VMI gone, VM is marked for deletion",
+			nil,
+			&virtv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+				},
+			},
+			true,
+		),
+		Entry("VM exist, VMI gone",
+			nil,
+			&virtv1.VirtualMachine{},
+			false,
+		),
+		Entry("VM exist, VMI exist",
+			&virtv1.VirtualMachineInstance{},
+			&virtv1.VirtualMachine{},
+			false),
+		Entry("VM exist, VMI exist, VM is marked for deletion",
+			&virtv1.VirtualMachineInstance{},
+			&virtv1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+				},
+			},
+			false,
+		),
+		Entry("standalone VMI is gone",
+			nil,
+			nil,
+			true,
+		),
+		Entry("standalone VMI, marked for deletion, without active pods",
+			&virtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+				},
+				Status: virtv1.VirtualMachineInstanceStatus{
+					ActivePods: map[apitypes.UID]string{},
+				},
+			},
+			nil,
+			true,
+		),
+		Entry("standalone VMI exist",
+			&virtv1.VirtualMachineInstance{},
+			nil,
+			false,
+		),
+		Entry("standalone VMI, marked for deletion, with ActivePods",
+			&virtv1.VirtualMachineInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+				},
+				Status: virtv1.VirtualMachineInstanceStatus{
+					ActivePods: map[apitypes.UID]string{"uid": "node_name"},
+				},
+			},
+			nil,
+			false,
+		),
+	)
+})

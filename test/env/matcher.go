@@ -12,6 +12,8 @@ import (
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	ipamclaimsv1alpha1 "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 )
 
@@ -19,7 +21,7 @@ import (
 func IPAMClaimsFromNamespace(namespace string) func() ([]ipamclaimsv1alpha1.IPAMClaim, error) {
 	return func() ([]ipamclaimsv1alpha1.IPAMClaim, error) {
 		ipamClaimList := &ipamclaimsv1alpha1.IPAMClaimList{}
-		if err := Client.List(context.Background(), ipamClaimList); err != nil {
+		if err := Client.List(context.Background(), ipamClaimList, client.InNamespace(namespace)); err != nil {
 			return nil, err
 		}
 		return ipamClaimList.Items, nil
@@ -66,6 +68,22 @@ func BeRestarted(oldUID types.UID) gomegatypes.GomegaMatcher {
 		}),
 		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 			"Phase": Equal(kubevirtv1.Running),
+		}),
+	}))
+}
+
+func BeCreated() gomegatypes.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"Created": BeTrue(),
+		}),
+	}))
+}
+
+func BeReady() gomegatypes.GomegaMatcher {
+	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+		"Status": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
+			"Ready": BeTrue(),
 		}),
 	}))
 }
