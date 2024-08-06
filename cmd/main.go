@@ -45,8 +45,9 @@ import (
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/ipamclaimswebhook"
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/vmnetworkscontroller"
+	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
+	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
+	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -67,6 +68,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var enableHTTP2 bool
+	var certDir string
 
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -74,6 +76,13 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(
+		&certDir,
+		"certificates-dir",
+		"",
+		"Specify the certificates directory for the webhook server",
+	)
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -98,9 +107,14 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	webhookServer := webhook.NewServer(webhook.Options{
+	webhookOptions := webhook.Options{
 		TLSOpts: tlsOpts,
-	})
+	}
+	if certDir != "" {
+		setupLog.Info("using certificates directory", "dir", certDir)
+		webhookOptions.CertDir = certDir
+	}
+	webhookServer := webhook.NewServer(webhookOptions)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -147,6 +161,11 @@ func main() {
 
 	if err = vmnetworkscontroller.NewVMReconciler(mgr).Setup(); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachine")
+		os.Exit(1)
+	}
+
+	if err = vminetworkscontroller.NewVMIReconciler(mgr).Setup(); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VirtualMachineInstance")
 		os.Exit(1)
 	}
 

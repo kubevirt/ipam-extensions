@@ -1,6 +1,8 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= kubevirt-ipam-controller:latest
+PASST_IMG ?= kubevirt/passt-binding-cni:latest
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.29.0
 
@@ -21,6 +23,9 @@ CONTAINER_TOOL ?= docker
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+
+E2E_TEST_TIMEOUT ?= "1h"
+E2E_TEST_ARGS ?= ""
 
 .PHONY: all
 all: build
@@ -67,7 +72,11 @@ test: manifests generate fmt vet envtest ## Run tests.
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e:
-	go test ./test/e2e/ -v -ginkgo.v
+	export KUBECONFIG=$$(pwd)/.output/kubeconfig && \
+	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
+	export REPORT_PATH=$$(pwd)/.output/ && \
+	cd test/e2e && \
+	go test -test.v --ginkgo.v --test.timeout=${E2E_TEST_TIMEOUT} ${E2E_TEST_ARGS} --ginkgo.junit-report=$${REPORT_PATH}/test-e2e.junit.xml
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter & yamllint
@@ -93,10 +102,13 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
+	export KUBEVIRT_VERSION=$$(curl -sSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt) && \
+	$(CONTAINER_TOOL) build --build-arg KUBEVIRT_VERSION=$${KUBEVIRT_VERSION} -f passt/Dockerfile -t ${PASST_IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+	$(CONTAINER_TOOL) push ${PASST_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -118,10 +130,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	@if [ -d "config/crd" ]; then \
-		$(KUSTOMIZE) build config/crd > dist/install.yaml; \
-	fi
-	echo "---" >> dist/install.yaml  # Add a document separator before appending
+	echo "---" > dist/install.yaml  # Add a document separator before appending
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default >> dist/install.yaml
 
@@ -130,14 +139,6 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 ifndef ignore-not-found
   ignore-not-found = false
 endif
-
-.PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
-
-.PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
@@ -156,7 +157,7 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 ## Tool Binaries
-KUBECTL ?= kubectl
+export KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
 ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
@@ -187,6 +188,18 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
+
+.PHONY: cluster-up
+cluster-up:
+	./hack/cluster.sh up
+
+.PHONY: cluster-down
+cluster-down:
+	./hack/cluster.sh down
+
+.PHONY: cluster-sync
+cluster-sync:
+	./hack/cluster.sh sync
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary (ideally with version)

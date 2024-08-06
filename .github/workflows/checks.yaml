@@ -1,0 +1,67 @@
+name: Checks
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-linters-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Build
+      run: time make
+
+    - name: Linters
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.57.2
+        args: --timeout 3m --verbose cmd/... pkg/...
+
+    - name: Ensure latest install manifest
+      run: |
+        echo "" > dist/install.yaml
+        IMG=ghcr.io/kubevirt/ipam-controller:latest make build-installer
+        if [[ -n "$(git status --porcelain)" ]]; then
+          echo "Please run 'make build-installer' and commit those changes"
+          git status --porcelain
+          exit 1
+        fi
+
+    - name: Test
+      run: ENVTEST_VERSION="release-0.17" make test
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Start cluster
+      env:
+        KIND_ALLOW_SYSTEM_WRITES: true
+      run: make cluster-up
+
+    - name: Sync cluster
+      run: make cluster-sync
+
+    - name: Run e2e tests
+      run: make test-e2e
+
+    - uses: actions/upload-artifact@v4  # upload test results
+      if: success() || failure()        # run this step even if previous step failed
+      with:
+        name: test-e2e-results
+        path: .output/*.xml

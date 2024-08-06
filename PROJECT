@@ -2,9 +2,9 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: github.com/maiqueb
+domain: github.com/kubevirt
 layout:
 - go.kubebuilder.io/v4
-projectName: kubevirt-ipam-claims
-repo: github.com/maiqueb/kubevirt-ipam-claims
+projectName: kubevirt-ipam-controller
+repo: github.com/kubevirt/ipam-extensions
 version: "3"

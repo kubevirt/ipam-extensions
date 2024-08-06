@@ -1,4 +1,4 @@
-package vmnetworkscontroller
+package vminetworkscontroller
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"k8s.io/utils/ptr"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,7 +17,6 @@ import (
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -24,21 +25,20 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 
-	"github.com/maiqueb/kubevirt-ipam-claims/pkg/config"
+	"github.com/kubevirt/ipam-extensions/pkg/claims"
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
-const kubevirtVMFinalizer = "kubevirt.io/persistent-ipam"
-
-// VirtualMachineReconciler reconciles a VirtualMachineInstance object
-type VirtualMachineReconciler struct {
+// VirtualMachineInstanceReconciler reconciles a VirtualMachineInstance object
+type VirtualMachineInstanceReconciler struct {
 	client.Client
 	Log     logr.Logger
 	Scheme  *runtime.Scheme
 	manager controllerruntime.Manager
 }
 
-func NewVMReconciler(manager controllerruntime.Manager) *VirtualMachineReconciler {
-	return &VirtualMachineReconciler{
+func NewVMIReconciler(manager controllerruntime.Manager) *VirtualMachineInstanceReconciler {
+	return &VirtualMachineInstanceReconciler{
 		Client:  manager.GetClient(),
 		Log:     controllerruntime.Log.WithName("controllers").WithName("VirtualMachineInstance"),
 		Scheme:  manager.GetScheme(),
@@ -46,7 +46,7 @@ func NewVMReconciler(manager controllerruntime.Manager) *VirtualMachineReconcile
 	}
 }
 
-func (r *VirtualMachineReconciler) Reconcile(
+func (r *VirtualMachineInstanceReconciler) Reconcile(
 	ctx context.Context,
 	request controllerruntime.Request,
 ) (controllerruntime.Result, error) {
@@ -56,28 +56,25 @@ func (r *VirtualMachineReconciler) Reconcile(
 	defer cancel()
 	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
-		r.Log.Info("could not retrieve VMI - will cleanup its IPAMClaims")
-		if err := r.Cleanup(request.NamespacedName); err != nil {
-			return controllerruntime.Result{}, fmt.Errorf("error removing the IPAMClaims finalizer: %w", err)
+		vmi = nil
+	} else if err != nil {
+		return controllerruntime.Result{}, err
+	}
+
+	vm, err := getOwningVM(ctx, r.Client, request.NamespacedName)
+	if err != nil {
+		return controllerruntime.Result{}, err
+	}
+
+	if shouldCleanFinalizers(vmi, vm) {
+		if err := claims.Cleanup(r.Client, request.NamespacedName); err != nil {
+			return controllerruntime.Result{}, fmt.Errorf("failed removing the IPAMClaims finalizer: %w", err)
 		}
 		return controllerruntime.Result{}, nil
 	}
 
-	var ownerInfo metav1.OwnerReference
-	vm := &virtv1.VirtualMachine{}
-	contextWithTimeout, cancel = context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	if err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm); apierrors.IsNotFound(err) {
-		r.Log.Info("Corresponding VM not found", "vm", request.NamespacedName)
-		ownerInfo = metav1.OwnerReference{APIVersion: vmi.APIVersion, Kind: vmi.Kind, Name: vmi.Name, UID: vmi.UID}
-	} else if err == nil {
-		ownerInfo = metav1.OwnerReference{APIVersion: vm.APIVersion, Kind: vm.Kind, Name: vm.Name, UID: vm.UID}
-	} else {
-		return controllerruntime.Result{}, fmt.Errorf(
-			"error to get VMI %q corresponding VM: %w",
-			request.NamespacedName,
-			err,
-		)
+	if vmi == nil {
+		return controllerruntime.Result{}, nil
 	}
 
 	vmiNetworks, err := r.vmiNetworksClaimingIPAM(ctx, vmi)
@@ -85,6 +82,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 		return controllerruntime.Result{}, err
 	}
 
+	ownerInfo := ownerReferenceFor(vmi, vm)
 	for logicalNetworkName, netConfigName := range vmiNetworks {
 		claimKey := fmt.Sprintf("%s.%s", vmi.Name, logicalNetworkName)
 		ipamClaim := &ipamclaimsapi.IPAMClaim{
@@ -92,8 +90,8 @@ func (r *VirtualMachineReconciler) Reconcile(
 				Name:            claimKey,
 				Namespace:       vmi.Namespace,
 				OwnerReferences: []metav1.OwnerReference{ownerInfo},
-				Finalizers:      []string{kubevirtVMFinalizer},
-				Labels:          ownedByVMLabel(vmi.Name),
+				Finalizers:      []string{claims.KubevirtVMFinalizer},
+				Labels:          claims.OwnedByVMLabel(vmi.Name),
 			},
 			Spec: ipamclaimsapi.IPAMClaimSpec{
 				Network: netConfigName,
@@ -109,16 +107,11 @@ func (r *VirtualMachineReconciler) Reconcile(
 
 				existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
 				if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
-					if apierrors.IsNotFound(err) {
-						// we assume it had already cleaned up in the few miliseconds it took to get here ...
-						// TODO does this make sense? ... It's pretty much just for completeness.
-						continue
-					} else if err != nil {
-						return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
-					}
+					return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
 				}
-				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == vm.UID {
-					r.Log.Info("found existing IPAMClaim belonging to this VM, nothing to do", "VM UID", vm.UID)
+
+				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
+					r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
 					continue
 				} else {
 					err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
@@ -135,14 +128,14 @@ func (r *VirtualMachineReconciler) Reconcile(
 }
 
 // Setup sets up the controller with the Manager passed in the constructor.
-func (r *VirtualMachineReconciler) Setup() error {
+func (r *VirtualMachineInstanceReconciler) Setup() error {
 	return controllerruntime.NewControllerManagedBy(r.manager).
 		For(&virtv1.VirtualMachineInstance{}).
-		WithEventFilter(onVMPredicates()).
+		WithEventFilter(onVMIPredicates()).
 		Complete(r)
 }
 
-func onVMPredicates() predicate.Funcs {
+func onVMIPredicates() predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(createEvent event.CreateEvent) bool {
 			return true
@@ -151,7 +144,7 @@ func onVMPredicates() predicate.Funcs {
 			return true
 		},
 		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(event.GenericEvent) bool {
 			return false
@@ -159,7 +152,7 @@ func onVMPredicates() predicate.Funcs {
 	}
 }
 
-func (r *VirtualMachineReconciler) vmiNetworksClaimingIPAM(
+func (r *VirtualMachineInstanceReconciler) vmiNetworksClaimingIPAM(
 	ctx context.Context,
 	vmi *virtv1.VirtualMachineInstance,
 ) (map[string]string, error) {
@@ -169,7 +162,7 @@ func (r *VirtualMachineReconciler) vmiNetworksClaimingIPAM(
 			continue
 		}
 
-		if net.Multus != nil {
+		if net.Multus != nil && !net.Multus.Default {
 			nadName := net.Multus.NetworkName
 			namespace := vmi.Namespace
 			namespaceAndName := strings.Split(nadName, "/")
@@ -205,25 +198,47 @@ func (r *VirtualMachineReconciler) vmiNetworksClaimingIPAM(
 	return vmiNets, nil
 }
 
-func (r *VirtualMachineReconciler) Cleanup(vmiKey apitypes.NamespacedName) error {
-	ipamClaims := &ipamclaimsapi.IPAMClaimList{}
-	if err := r.Client.List(context.Background(), ipamClaims, ownedByVMLabel(vmiKey.Name)); err != nil {
-		return fmt.Errorf("could not get list of IPAMClaims owned by VM %q: %w", vmiKey.String(), err)
+func shouldCleanFinalizers(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) bool {
+	if vm != nil {
+		// VMI is gone and VM is marked for deletion
+		return vmi == nil && vm.DeletionTimestamp != nil
+	} else {
+		// VMI is gone or VMI is marked for deletion, virt-launcher is gone
+		return vmi == nil || (vmi.DeletionTimestamp != nil && len(vmi.Status.ActivePods) == 0)
 	}
-
-	for _, claim := range ipamClaims.Items {
-		removedFinalizer := controllerutil.RemoveFinalizer(&claim, kubevirtVMFinalizer)
-		if removedFinalizer {
-			if err := r.Client.Update(context.Background(), &claim, &client.UpdateOptions{}); err != nil {
-				return client.IgnoreNotFound(err)
-			}
-		}
-	}
-	return nil
 }
 
-func ownedByVMLabel(vmiName string) client.MatchingLabels {
-	return map[string]string{
-		virtv1.VirtualMachineLabel: vmiName,
+func ownerReferenceFor(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) metav1.OwnerReference {
+	var obj client.Object
+	if vm != nil {
+		obj = vm
+	} else {
+		obj = vmi
+	}
+
+	aPIVersion := obj.GetObjectKind().GroupVersionKind().Group + "/" + obj.GetObjectKind().GroupVersionKind().Version
+	return metav1.OwnerReference{
+		APIVersion:         aPIVersion,
+		Kind:               obj.GetObjectKind().GroupVersionKind().Kind,
+		Name:               obj.GetName(),
+		UID:                obj.GetUID(),
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
+	}
+}
+
+// Gets the owning VM if any. for simplicity it just try to fetch the VM,
+// even when the VMI exists, instead of parsing ownerReferences and handling differently the nil VMI case.
+func getOwningVM(ctx context.Context, c client.Client, name apitypes.NamespacedName) (*virtv1.VirtualMachine, error) {
+	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	vm := &virtv1.VirtualMachine{}
+	if err := c.Get(contextWithTimeout, name, vm); err == nil {
+		return vm, nil
+	} else if apierrors.IsNotFound(err) {
+		return nil, nil
+	} else {
+		return nil, fmt.Errorf("failed getting VM %q: %w", name, err)
 	}
 }
