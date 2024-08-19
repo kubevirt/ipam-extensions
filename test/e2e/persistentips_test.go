@@ -41,6 +41,20 @@ import (
 )
 
 var _ = Describe("Persistent IPs", func() {
+	var failureCount int = 0
+	JustAfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			failureCount++
+			By(fmt.Sprintf("Test failed, collecting logs and artifacts, failure count %d", failureCount))
+
+			logCommand([]string{"get", "pods", "-A"}, "pods", failureCount)
+			logCommand([]string{"get", "vm", "-A", "-oyaml"}, "vms", failureCount)
+			logCommand([]string{"get", "vmi", "-A", "-oyaml"}, "vmis", failureCount)
+			logCommand([]string{"get", "ipamclaims", "-A", "-oyaml"}, "ipamclaims", failureCount)
+			logOvnPods(failureCount)
+		}
+	})
+
 	When("network attachment definition created with allowPersistentIPs=true", func() {
 		var (
 			td                   testenv.TestData
