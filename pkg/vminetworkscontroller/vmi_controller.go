@@ -83,44 +83,31 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 	}
 
 	ownerInfo := ownerReferenceFor(vmi, vm)
+
+	// UDN code block
+	primaryUDN, err := r.vmiPrimaryUDN(ctx, vmi)
+	if err != nil {
+		return controllerruntime.Result{}, err
+	}
+	if primaryUDN != nil {
+		claimKey := fmt.Sprintf("%s.%s-primary-udn", vmi.Name, primaryUDN.Name)
+		udnIPAMClaim := newIPAMClaim(claimKey, vmi, ownerInfo, primaryUDN.Name)
+		if err := r.ensureIPAMClaim(ctx, udnIPAMClaim, vmi, ownerInfo); err != nil {
+			return controllerruntime.Result{}, fmt.Errorf(
+				"failed ensuring IPAM claim for primary UDN network %q: %w",
+				primaryUDN.Name,
+				err,
+			)
+		}
+	}
+	// UDN code block END
+
 	for logicalNetworkName, netConfigName := range vmiNetworks {
 		claimKey := fmt.Sprintf("%s.%s", vmi.Name, logicalNetworkName)
-		ipamClaim := &ipamclaimsapi.IPAMClaim{
-			ObjectMeta: controllerruntime.ObjectMeta{
-				Name:            claimKey,
-				Namespace:       vmi.Namespace,
-				OwnerReferences: []metav1.OwnerReference{ownerInfo},
-				Finalizers:      []string{claims.KubevirtVMFinalizer},
-				Labels:          claims.OwnedByVMLabel(vmi.Name),
-			},
-			Spec: ipamclaimsapi.IPAMClaimSpec{
-				Network: netConfigName,
-			},
-		}
+		ipamClaim := newIPAMClaim(claimKey, vmi, ownerInfo, netConfigName)
 
-		if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				claimKey := apitypes.NamespacedName{
-					Namespace: vmi.Namespace,
-					Name:      claimKey,
-				}
-
-				existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
-				if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
-					return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
-				}
-
-				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
-					r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
-					continue
-				} else {
-					err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
-					r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
-					return controllerruntime.Result{}, err
-				}
-			}
-			r.Log.Error(err, "failed to create the IPAMClaim")
-			return controllerruntime.Result{}, err
+		if err := r.ensureIPAMClaim(ctx, ipamClaim, vmi, ownerInfo); err != nil {
+			return controllerruntime.Result{}, fmt.Errorf("failed ensuring IPAM claim: %w", err)
 		}
 	}
 
@@ -241,4 +228,93 @@ func getOwningVM(ctx context.Context, c client.Client, name apitypes.NamespacedN
 	} else {
 		return nil, fmt.Errorf("failed getting VM %q: %w", name, err)
 	}
+}
+
+func (r *VirtualMachineInstanceReconciler) vmiPrimaryUDN(
+	ctx context.Context,
+	vmi *virtv1.VirtualMachineInstance,
+) (*config.RelevantConfig, error) {
+	const (
+		NetworkRolePrimary   = "primary"
+		NetworkRoleSecondary = "secondary"
+	)
+
+	var namespaceNads nadv1.NetworkAttachmentDefinitionList
+	if err := r.List(ctx, &namespaceNads, &client.ListOptions{}); err != nil {
+		return nil, fmt.Errorf("failed to list the NADs on namespace %q: %v", vmi.Namespace, err)
+	}
+
+	for _, nad := range namespaceNads.Items {
+		networkConfig, err := config.NewConfig(nad.Spec.Config)
+		if err != nil {
+			r.Log.Error(
+				err,
+				"failed extracting the relevant NAD configuration",
+				"NAD name",
+				nad.Name,
+				"NAD namespace",
+				nad.Namespace,
+			)
+			return nil, fmt.Errorf("failed to extract the relevant NAD information")
+		}
+
+		if networkConfig.Role == NetworkRolePrimary {
+			return networkConfig, nil
+		}
+	}
+	return nil, nil
+}
+
+func newIPAMClaim(
+	claimKey string,
+	vmi *virtv1.VirtualMachineInstance,
+	ownerInfo metav1.OwnerReference,
+	netConfigName string,
+) *ipamclaimsapi.IPAMClaim {
+	return &ipamclaimsapi.IPAMClaim{
+		ObjectMeta: controllerruntime.ObjectMeta{
+			Name:            claimKey,
+			Namespace:       vmi.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerInfo},
+			Finalizers:      []string{claims.KubevirtVMFinalizer},
+			Labels:          claims.OwnedByVMLabel(vmi.Name),
+		},
+		Spec: ipamclaimsapi.IPAMClaimSpec{
+			Network: netConfigName,
+		},
+	}
+}
+
+func (r *VirtualMachineInstanceReconciler) ensureIPAMClaim(
+	ctx context.Context,
+	ipamClaim *ipamclaimsapi.IPAMClaim,
+	vmi *virtv1.VirtualMachineInstance,
+	ownerInfo metav1.OwnerReference,
+) error {
+	claimKey := ipamClaim.Name
+	if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			claimKey := apitypes.NamespacedName{
+				Namespace: vmi.Namespace,
+				Name:      claimKey,
+			}
+
+			existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
+			if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
+				return fmt.Errorf("let us be on the safe side and retry later")
+			}
+
+			if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
+				r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
+				return nil
+			} else {
+				err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
+				r.Log.Error(err, "leaked IPAMClaim found", "existing owner", existingIPAMClaim.UID)
+				return err
+			}
+		}
+		r.Log.Error(err, "failed to create the IPAMClaim")
+		return err
+	}
+	return nil
 }

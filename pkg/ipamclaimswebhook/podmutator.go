@@ -65,14 +65,40 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	log.Info("webhook handling event")
+	vmName, hasVMAnnotation := pod.Annotations["kubevirt.io/domain"]
+	var primaryUDNNetwork *config.RelevantConfig
+	if hasVMAnnotation {
+		log.Info("webhook handling event - checking primary UDN flow for", "VM", vmName, "namespace", pod.Namespace)
+		var err error
+		primaryUDNNetwork, err = a.vmiPrimaryUDN(ctx, pod.Namespace)
+		if err != nil {
+			// TODO: figure out what to do. Probably fail
+			return admission.Errored(http.StatusInternalServerError, err)
+		}
+
+		if primaryUDNNetwork != nil && primaryUDNNetwork.AllowPersistentIPs {
+			log.Info(
+				"found primary UDN for",
+				"vmName",
+				vmName,
+				"namespace",
+				pod.Namespace,
+				"primary UDN name",
+				primaryUDNNetwork.Name,
+			)
+			annotatePodWithUDN(pod, vmName, primaryUDNNetwork.Name)
+		}
+	}
+
+	log.Info("webhook handling event - checking secondary networks flow for", "pod", pod.Name, "namespace", pod.Namespace)
 	networkSelectionElements, err := netutils.ParsePodNetworkAnnotation(pod)
 	if err != nil {
 		var goodTypeOfError *v1.NoK8sNetworkError
-		if errors.As(err, &goodTypeOfError) {
+		if errors.As(err, &goodTypeOfError) && primaryUDNNetwork == nil {
 			return admission.Allowed("no secondary networks requested")
+		} else if primaryUDNNetwork == nil {
+			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to parse pod network selection elements"))
 		}
-		return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to parse pod network selection elements"))
 	}
 
 	var (
@@ -112,7 +138,6 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 				"NAD", nadName,
 				"network", pluginConfig.Name,
 			)
-			vmName, hasVMAnnotation := pod.Annotations["kubevirt.io/domain"]
 			if !hasVMAnnotation {
 				log.Info(
 					"does not have the kubevirt VM annotation",
@@ -154,13 +179,12 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		podNetworkSelectionElements = append(podNetworkSelectionElements, *networkSelectionElement)
 	}
 
-	if len(podNetworkSelectionElements) > 0 {
+	if len(podNetworkSelectionElements) > 0 || (primaryUDNNetwork != nil && primaryUDNNetwork.AllowPersistentIPs && vmName != "") {
 		newPod, err := podWithUpdatedSelectionElements(pod, podNetworkSelectionElements)
 		if err != nil {
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
-
-		if reflect.DeepEqual(newPod, pod) || !hasChangedNetworkSelectionElements {
+		if primaryUDNNetwork == nil && (reflect.DeepEqual(newPod, pod) || !hasChangedNetworkSelectionElements) {
 			return admission.Allowed("mutation not needed")
 		}
 
@@ -202,6 +226,48 @@ func podWithUpdatedSelectionElements(pod *corev1.Pod, networks []v1.NetworkSelec
 	if err != nil {
 		return nil, err
 	}
-	newPod.Annotations[v1.NetworkAttachmentAnnot] = string(newNets)
+	if string(newNets) != "[]" {
+		newPod.Annotations[v1.NetworkAttachmentAnnot] = string(newNets)
+	}
 	return newPod, nil
+}
+
+func annotatePodWithUDN(pod *corev1.Pod, vmName string, primaryUDNName string) {
+	const ovnUDNIPAMClaimName = "k8s.ovn.org/ovn-udn-ipamclaim-reference"
+	udnAnnotations := pod.Annotations
+	udnAnnotations[ovnUDNIPAMClaimName] = fmt.Sprintf("%s.%s-primary-udn", vmName, primaryUDNName)
+	pod.SetAnnotations(udnAnnotations)
+}
+
+func (a *IPAMClaimsValet) vmiPrimaryUDN(ctx context.Context, namespace string) (*config.RelevantConfig, error) {
+	const (
+		NetworkRolePrimary   = "primary"
+		NetworkRoleSecondary = "secondary"
+	)
+
+	log := logf.FromContext(ctx)
+	var namespaceNads v1.NetworkAttachmentDefinitionList
+	if err := a.List(ctx, &namespaceNads, &client.ListOptions{}); err != nil {
+		return nil, fmt.Errorf("failed to list the NADs on namespace %q: %v", namespace, err)
+	}
+
+	for _, nad := range namespaceNads.Items {
+		networkConfig, err := config.NewConfig(nad.Spec.Config)
+		if err != nil {
+			log.Error(
+				err,
+				"failed extracting the relevant NAD configuration",
+				"NAD name",
+				nad.Name,
+				"NAD namespace",
+				nad.Namespace,
+			)
+			return nil, fmt.Errorf("failed to extract the relevant NAD information")
+		}
+
+		if networkConfig.Role == NetworkRolePrimary {
+			return networkConfig, nil
+		}
+	}
+	return nil, nil
 }
