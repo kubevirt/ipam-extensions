@@ -3,6 +3,8 @@
 IMG ?= kubevirt-ipam-controller:latest
 PASST_IMG ?= kubevirt/passt-binding-cni:latest
 
+export KUBECONFIG ?= $(shell pwd)/.output/kubeconfig
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.29.0
 
@@ -72,7 +74,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e:
-	export KUBECONFIG=$$(pwd)/.output/kubeconfig && \
+	export KUBECONFIG=${KUBECONFIG} && \
 	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
 	export REPORT_PATH=$$(pwd)/.output/ && \
 	cd test/e2e && \
