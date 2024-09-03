@@ -14,7 +14,7 @@ OVN_KUBERNETES_DIR=${OUTPUT_DIR}/ovn-kubernetes
 # from https://github.com/kubernetes-sigs/kind/releases
 KIND_BIN=${OUTPUT_DIR}/kind
 
-export KUBECONFIG=${OUTPUT_DIR}/kubeconfig
+export KUBECONFIG=${KUBECONFIG:-${OUTPUT_DIR}/kubeconfig}
 
 cluster_name=virt-ipam
 op=$1
