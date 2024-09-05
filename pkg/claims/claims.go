@@ -41,3 +41,7 @@ func OwnedByVMLabel(vmiName string) client.MatchingLabels {
 		virtv1.VirtualMachineLabel: vmiName,
 	}
 }
+
+func ComposeKey(vmName, networkName string) string {
+	return fmt.Sprintf("%s.%s", vmName, networkName)
+}

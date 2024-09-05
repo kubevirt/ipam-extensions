@@ -5,9 +5,18 @@ import (
 	"fmt"
 )
 
+type NetworkRole string
+
+const (
+	NetworkRolePrimary NetworkRole = "primary"
+)
+
+const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/ovn-udn-ipamclaim-reference"
+
 type RelevantConfig struct {
-	Name               string `json:"name"`
-	AllowPersistentIPs bool   `json:"allowPersistentIPs,omitempty"`
+	Name               string      `json:"name"`
+	AllowPersistentIPs bool        `json:"allowPersistentIPs,omitempty"`
+	Role               NetworkRole `json:"role,omitempty"`
 }
 
 func NewConfig(nadSpec string) (*RelevantConfig, error) {

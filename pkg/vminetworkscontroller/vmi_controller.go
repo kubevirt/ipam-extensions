@@ -27,6 +27,7 @@ import (
 
 	"github.com/kubevirt/ipam-extensions/pkg/claims"
 	"github.com/kubevirt/ipam-extensions/pkg/config"
+	"github.com/kubevirt/ipam-extensions/pkg/udn"
 )
 
 // VirtualMachineInstanceReconciler reconciles a VirtualMachineInstance object
@@ -84,7 +85,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 
 	ownerInfo := ownerReferenceFor(vmi, vm)
 	for logicalNetworkName, netConfigName := range vmiNetworks {
-		claimKey := fmt.Sprintf("%s.%s", vmi.Name, logicalNetworkName)
+		claimKey := claims.ComposeKey(vmi.Name, logicalNetworkName)
 		ipamClaim := &ipamclaimsapi.IPAMClaim{
 			ObjectMeta: controllerruntime.ObjectMeta{
 				Name:            claimKey,
@@ -158,44 +159,68 @@ func (r *VirtualMachineInstanceReconciler) vmiNetworksClaimingIPAM(
 ) (map[string]string, error) {
 	vmiNets := make(map[string]string)
 	for _, net := range vmi.Spec.Networks {
-		if net.Pod != nil {
-			continue
-		}
-
 		if net.Multus != nil && !net.Multus.Default {
-			nadName := net.Multus.NetworkName
-			namespace := vmi.Namespace
-			namespaceAndName := strings.Split(nadName, "/")
-			if len(namespaceAndName) == 2 {
-				namespace = namespaceAndName[0]
-				nadName = namespaceAndName[1]
+			if err := r.ensureVMINetworksWithSecondaryUDN(ctx, vmi.Namespace, net, vmiNets); err != nil {
+				return nil, err
 			}
-
-			contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
-			defer cancel()
-			nad := &nadv1.NetworkAttachmentDefinition{}
-			if err := r.Client.Get(
-				contextWithTimeout,
-				apitypes.NamespacedName{Namespace: namespace, Name: nadName},
-				nad,
-			); err != nil {
-				if apierrors.IsNotFound(err) {
-					return nil, err
-				}
-			}
-
-			nadConfig, err := config.NewConfig(nad.Spec.Config)
-			if err != nil {
-				r.Log.Error(err, "failed extracting the relevant NAD configuration", "NAD name", nadName)
-				return nil, fmt.Errorf("failed to extract the relevant NAD information")
-			}
-
-			if nadConfig.AllowPersistentIPs {
-				vmiNets[net.Name] = nadConfig.Name
+		} else if net.Pod != nil {
+			if err := r.ensureVMINetworksWithPrimaryUDN(ctx, vmi.Namespace, net, vmiNets); err != nil {
+				return nil, err
 			}
 		}
 	}
+
 	return vmiNets, nil
+}
+
+func (r *VirtualMachineInstanceReconciler) ensureVMINetworksWithSecondaryUDN(ctx context.Context,
+	namespace string, network virtv1.Network, vmiNets map[string]string) error {
+	nadName := network.Multus.NetworkName
+	namespaceAndName := strings.Split(nadName, "/")
+	if len(namespaceAndName) == 2 {
+		namespace = namespaceAndName[0]
+		nadName = namespaceAndName[1]
+	}
+
+	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	nad := &nadv1.NetworkAttachmentDefinition{}
+	if err := r.Client.Get(
+		contextWithTimeout,
+		apitypes.NamespacedName{Namespace: namespace, Name: nadName},
+		nad,
+	); err != nil {
+		if apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return r.ensureVMINetworkWithUDN(network, nad, vmiNets)
+}
+
+func (r *VirtualMachineInstanceReconciler) ensureVMINetworksWithPrimaryUDN(ctx context.Context,
+	namespace string, network virtv1.Network, vmiNets map[string]string) error {
+	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, r.Client, namespace)
+	if err != nil {
+		return err
+	}
+	if primaryNetworkNAD == nil {
+		return nil
+	}
+	return r.ensureVMINetworkWithUDN(network, primaryNetworkNAD, vmiNets)
+}
+
+func (r *VirtualMachineInstanceReconciler) ensureVMINetworkWithUDN(network virtv1.Network,
+	nad *nadv1.NetworkAttachmentDefinition, vmiNets map[string]string) error {
+	nadConfig, err := config.NewConfig(nad.Spec.Config)
+	if err != nil {
+		r.Log.Error(err, "failed extracting the relevant NAD configuration", "NAD name", nad.Name)
+		return fmt.Errorf("failed to extract the relevant NAD information")
+	}
+
+	if nadConfig.AllowPersistentIPs {
+		vmiNets[network.Name] = nadConfig.Name
+	}
+	return nil
 }
 
 func shouldCleanFinalizers(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) bool {
