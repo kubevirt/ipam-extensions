@@ -11,7 +11,7 @@ const (
 	NetworkRolePrimary NetworkRole = "primary"
 )
 
-const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/ovn-udn-ipamclaim-reference"
+const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/primary-udn-ipamclaim"
 
 type RelevantConfig struct {
 	Name               string      `json:"name"`

@@ -146,7 +146,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				Patches: []jsonpatch.JsonPatchOperation{
 					{
 						Operation: "add",
-						Path:      "/metadata/annotations/k8s.ovn.org~1ovn-udn-ipamclaim-reference",
+						Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
 						Value:     "vm1.podnet",
 					},
 					{
@@ -173,7 +173,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				Patches: []jsonpatch.JsonPatchOperation{
 					{
 						Operation: "add",
-						Path:      "/metadata/annotations/k8s.ovn.org~1ovn-udn-ipamclaim-reference",
+						Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
 						Value:     "vm1.podnet",
 					},
 				},
