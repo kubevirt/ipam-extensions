@@ -29,3 +29,4 @@ go.work
 
 # output dir for the hack/cluster.sh artifacts and e2e tests
 .output
+_output
