@@ -19,6 +19,7 @@ package e2e
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -67,7 +68,8 @@ func logCommand(args []string, topic string, failureCount int) {
 	}
 	defer file.Close()
 
-	fmt.Fprint(file, fmt.Sprintf("kubectl %s\n%s\n", strings.Join(args, " "), stdout))
+	mw := io.MultiWriter(file, os.Stdout)
+	fmt.Fprint(mw, fmt.Sprintf("kubectl %s\n%s\n", strings.Join(args, " "), stdout))
 }
 
 func logOvnPods(failureCount int) {
