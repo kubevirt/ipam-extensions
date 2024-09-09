@@ -34,7 +34,7 @@ import (
 	testenv "github.com/kubevirt/ipam-extensions/test/env"
 )
 
-const logsDir = ".output" // ./test/e2e/.output
+const logsDir = "_output" // ./test/e2e/_output
 
 var _ = BeforeSuite(func() {
 	ctrl.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
