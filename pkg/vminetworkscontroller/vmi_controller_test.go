@@ -126,7 +126,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 		vmiReconciler := NewVMIReconciler(mgr)
 		if config.expectedError != nil {
 			_, err := vmiReconciler.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey})
-			Expect(err).To(MatchError(config.expectedError))
+			Expect(err).To(MatchError(config.expectedError.Error()))
 		} else {
 			Expect(
 				vmiReconciler.Reconcile(context.Background(), controllerruntime.Request{NamespacedName: vmiKey}),
@@ -198,7 +198,8 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
 				dummyNADWrongFormat(nadName),
 			},
-			expectedError: fmt.Errorf("failed to extract the relevant NAD information"),
+			expectedError: fmt.Errorf("failed to extract the relevant NAD information: " +
+				"failed to extract CNI configuration from NAD: invalid character 'h' in literal true (expecting 'r')"),
 		}),
 		Entry("the associated VMI exists but points to a NAD that doesn't exist", testConfig{
 			inputVM:  dummyVM(dummyVMISpec(nadName)),
