@@ -52,7 +52,7 @@ function up() {
     kind delete cluster --name $cluster_name
     (
         cd ${OVN_KUBERNETES_DIR}
-        ./contrib/kind.sh --local-kind-registry ${KIND_ARGS} -cn ${cluster_name}
+        ./contrib/kind.sh --local-kind-registry ${KIND_ARGS} -cn ${cluster_name} --opt-out-kv-ipam
     )
 }
 
