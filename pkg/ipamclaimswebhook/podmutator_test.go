@@ -32,6 +32,8 @@ import (
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
 type testConfig struct {
@@ -137,6 +139,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
 				dummyNAD(nadName),
 				dummyPrimaryNetworkNAD(nadName),
+				dummyDefaultNetworkNAD(),
 			},
 			inputPod: dummyPodForVM(nadName, vmName),
 			expectedAdmissionResponse: admissionv1.AdmissionResponse{
@@ -146,8 +149,8 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
-					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-					Value:     "vm1.podnet",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value:     "[{\"name\":\"ovn-kubernetes\",\"namespace\":\"default\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
 				{
 					Operation: "replace",
@@ -162,6 +165,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			inputVMI: dummyVMI(nadName),
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
 				dummyPrimaryNetworkNAD(nadName),
+				dummyDefaultNetworkNAD(),
 			},
 			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
 			expectedAdmissionResponse: admissionv1.AdmissionResponse{
@@ -171,8 +175,8 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
-					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-					Value:     "vm1.podnet",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value:     "[{\"name\":\"ovn-kubernetes\",\"namespace\":\"default\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
 			}),
 		}),
@@ -332,6 +336,10 @@ func dummyPrimaryNetworkNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
 }
 func dummyNADWithoutPersistentIPs(nadName string) *nadv1.NetworkAttachmentDefinition {
 	return dummyNADWithConfig(nadName, `{"name": "goodnet"}`)
+}
+
+func dummyDefaultNetworkNAD() *nadv1.NetworkAttachmentDefinition {
+	return dummyNADWithConfig("default/"+config.DefaultNetworkName, "")
 }
 
 func podAdmissionRequest(pod *corev1.Pod) admission.Request {

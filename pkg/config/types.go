@@ -11,7 +11,10 @@ const (
 	NetworkRolePrimary NetworkRole = "primary"
 )
 
-const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/primary-udn-ipamclaim"
+const (
+	MultusDefaultNetwork = "v1.multus-cni.io/default-network"
+	DefaultNetworkName   = "ovn-kubernetes"
+)
 
 type RelevantConfig struct {
 	Name               string      `json:"name"`

@@ -109,7 +109,10 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		if newPod == nil {
 			newPod = pod.DeepCopy()
 		}
-		updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(newPod, newPrimaryNetworkIPAMClaimName)
+		if err = updatePodWithDefaultNetworkAnnotation(a.Client, newPod, newPrimaryNetworkIPAMClaimName); err != nil {
+			return admission.Errored(http.StatusInternalServerError,
+				fmt.Errorf("failed updating default network annotation: %v", err))
+		}
 	}
 
 	if newPod != nil {
@@ -159,8 +162,33 @@ func updatePodSelectionElements(pod *corev1.Pod, networks []*v1.NetworkSelection
 	return nil
 }
 
-func updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(pod *corev1.Pod, primaryNetworkIPAMClaimName string) {
-	pod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] = primaryNetworkIPAMClaimName
+func updatePodWithDefaultNetworkAnnotation(cli client.Client, pod *corev1.Pod, ipamClaimName string) error {
+	nadKey := types.NamespacedName{
+		Namespace: "default",
+		Name:      config.DefaultNetworkName,
+	}
+
+	nad := v1.NetworkAttachmentDefinition{}
+	if err := cli.Get(context.Background(), nadKey, &nad); err != nil {
+		return err
+	}
+
+	networkAnnotation := []v1.NetworkSelectionElement{
+		{
+			Namespace:          "default",
+			Name:               config.DefaultNetworkName,
+			IPAMClaimReference: ipamClaimName,
+		},
+	}
+
+	annotationBytes, err := json.Marshal(networkAnnotation)
+	if err != nil {
+		return err
+	}
+
+	pod.Annotations[config.MultusDefaultNetwork] = string(annotationBytes)
+
+	return nil
 }
 
 func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
@@ -236,9 +264,7 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
 func findNewPrimaryNetworkIPAMClaimName(ctx context.Context,
 	cli client.Client, pod *corev1.Pod, vmName string) (string, error) {
 	log := logf.FromContext(ctx)
-	if pod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] != "" {
-		return "", nil
-	}
+
 	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, pod.Namespace)
 	if err != nil {
 		return "", err
