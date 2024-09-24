@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Persistent IPs", func() {
+var _ = Describe("Persistent IPs on Secondary interfaces", func() {
 	var failureCount int = 0
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
