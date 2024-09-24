@@ -58,6 +58,7 @@ var _ = Describe("Persistent IPs", func() {
 	When("network attachment definition created with allowPersistentIPs=true", func() {
 		var (
 			td                   testenv.TestData
+			role                 = "secondary"
 			networkInterfaceName = "multus"
 			vm                   *kubevirtv1.VirtualMachine
 			vmi                  *kubevirtv1.VirtualMachineInstance
@@ -70,7 +71,7 @@ var _ = Describe("Persistent IPs", func() {
 				td.TearDown()
 			})
 
-			nad = testenv.GenerateLayer2WithSubnetNAD(td.Namespace)
+			nad = testenv.GenerateLayer2WithSubnetNAD(td.Namespace, role)
 			vmi = testenv.GenerateAlpineWithMultusVMI(td.Namespace, networkInterfaceName, nad.Name)
 			vm = testenv.NewVirtualMachine(vmi, testenv.WithRunning())
 
