@@ -3,7 +3,7 @@
 set -xe
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-KIND_ARGS="${KIND_ARGS:--ic -ikv -i6 -mne}"
+KIND_ARGS="${KIND_ARGS:--ic -ikv -i6 -mne -nse}"
 
 OUTPUT_DIR=${OUTPUT_DIR:-${SCRIPT_DIR}/../.output}
 
