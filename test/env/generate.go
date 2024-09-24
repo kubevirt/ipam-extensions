@@ -13,7 +13,7 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-func GenerateLayer2WithSubnetNAD(namespace string) *nadv1.NetworkAttachmentDefinition {
+func GenerateLayer2WithSubnetNAD(namespace, role string) *nadv1.NetworkAttachmentDefinition {
 	networkName := "l2"
 	nadName := RandomName(networkName, 16)
 	return &nadv1.NetworkAttachmentDefinition{
@@ -30,9 +30,10 @@ func GenerateLayer2WithSubnetNAD(namespace string) *nadv1.NetworkAttachmentDefin
         "topology": "layer2",
         "subnets": "10.100.200.0/24",
         "netAttachDefName": "%[1]s/%[2]s",
+		"role": "%[4]s",
         "allowPersistentIPs": true
 }
-`, namespace, nadName, networkName),
+`, namespace, nadName, networkName, role),
 		},
 	}
 }

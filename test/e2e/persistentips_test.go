@@ -70,7 +70,7 @@ var _ = Describe("Persistent IPs", func() {
 				td.TearDown()
 			})
 
-			nad = testenv.GenerateLayer2WithSubnetNAD(td.Namespace)
+			nad = testenv.GenerateLayer2WithSubnetNAD(td.Namespace, "secondary")
 			vmi = testenv.GenerateAlpineWithMultusVMI(td.Namespace, networkInterfaceName, nad.Name)
 			vm = testenv.NewVirtualMachine(vmi, testenv.WithRunning())
 
