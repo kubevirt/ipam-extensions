@@ -9,6 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"gomodules.xyz/jsonpatch/v2"
 
@@ -38,7 +39,8 @@ type testConfig struct {
 	inputVMI                  *virtv1.VirtualMachineInstance
 	inputNADs                 []*nadv1.NetworkAttachmentDefinition
 	inputPod                  *corev1.Pod
-	expectedAdmissionResponse admission.Response
+	expectedAdmissionResponse admissionv1.AdmissionResponse
+	expectedAdmissionPatches  types.GomegaMatcher
 }
 
 func TestController(t *testing.T) {
@@ -105,11 +107,12 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 
 		ipamClaimsManager := NewIPAMClaimsValet(mgr)
 
-		Expect(
-			ipamClaimsManager.Handle(context.Background(), podAdmissionRequest(config.inputPod)),
-		).To(
-			Equal(config.expectedAdmissionResponse),
-		)
+		result := ipamClaimsManager.Handle(context.Background(), podAdmissionRequest(config.inputPod))
+
+		Expect(result.AdmissionResponse).To(Equal(config.expectedAdmissionResponse))
+		if config.expectedAdmissionPatches != nil {
+			Expect(result.Patches).To(config.expectedAdmissionPatches)
+		}
 	},
 		Entry("pod not beloging to a VM and not requesting secondary "+
 			"attachments and no primary user defined network is accepted", testConfig{
@@ -119,13 +122,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyNAD(nadName),
 			},
 			inputPod: &corev1.Pod{},
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed: true,
-					Result: &metav1.Status{
-						Message: "not a VM",
-						Code:    http.StatusOK,
-					},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: true,
+				Result: &metav1.Status{
+					Message: "not a VM",
+					Code:    http.StatusOK,
 				},
 			},
 		}),
@@ -138,24 +139,22 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyPrimaryNetworkNAD(nadName),
 			},
 			inputPod: dummyPodForVM(nadName, vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed:   true,
-					PatchType: &patchType,
-				},
-				Patches: []jsonpatch.JsonPatchOperation{
-					{
-						Operation: "add",
-						Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-						Value:     "vm1.podnet",
-					},
-					{
-						Operation: "replace",
-						Path:      "/metadata/annotations/k8s.v1.cni.cncf.io~1networks",
-						Value:     "[{\"name\":\"supadupanet\",\"namespace\":\"ns1\",\"ipam-claim-reference\":\"vm1.randomnet\"}]",
-					},
-				},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
 			},
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
+				{
+					Operation: "replace",
+					Path:      "/metadata/annotations/k8s.v1.cni.cncf.io~1networks",
+					Value:     "[{\"name\":\"supadupanet\",\"namespace\":\"ns1\",\"ipam-claim-reference\":\"vm1.randomnet\"}]",
+				},
+			}),
 		}),
 		Entry("vm launcher pod with with primary user defined network defined "+
 			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
@@ -165,19 +164,17 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyPrimaryNetworkNAD(nadName),
 			},
 			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed:   true,
-					PatchType: &patchType,
-				},
-				Patches: []jsonpatch.JsonPatchOperation{
-					{
-						Operation: "add",
-						Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-						Value:     "vm1.podnet",
-					},
-				},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
 			},
+			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
+			}),
 		}),
 		Entry("vm launcher pod with an attachment to a secondary user defined "+
 			"network with persistent IPs enabled requests an IPAMClaim", testConfig{
@@ -187,19 +184,17 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyNAD(nadName),
 			},
 			inputPod: dummyPodForVM(nadName, vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed:   true,
-					PatchType: &patchType,
-				},
-				Patches: []jsonpatch.JsonPatchOperation{
-					{
-						Operation: "replace",
-						Path:      "/metadata/annotations/k8s.v1.cni.cncf.io~1networks",
-						Value:     "[{\"name\":\"supadupanet\",\"namespace\":\"ns1\",\"ipam-claim-reference\":\"vm1.randomnet\"}]",
-					},
-				},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
 			},
+			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "replace",
+					Path:      "/metadata/annotations/k8s.v1.cni.cncf.io~1networks",
+					Value:     "[{\"name\":\"supadupanet\",\"namespace\":\"ns1\",\"ipam-claim-reference\":\"vm1.randomnet\"}]",
+				},
+			}),
 		}),
 		Entry("vm launcher pod with an attachment to a network *without* persistentIPs is accepted", testConfig{
 			inputVM:  dummyVM(nadName),
@@ -208,13 +203,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyNADWithoutPersistentIPs(nadName),
 			},
 			inputPod: dummyPodForVM(nadName, vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed: true,
-					Result: &metav1.Status{
-						Message: "carry on",
-						Code:    http.StatusOK,
-					},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: true,
+				Result: &metav1.Status{
+					Message: "carry on",
+					Code:    http.StatusOK,
 				},
 			},
 		}),
@@ -223,13 +216,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyNAD(nadName),
 			},
 			inputPod: dummyPod(nadName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed: true,
-					Result: &metav1.Status{
-						Message: "not a VM",
-						Code:    http.StatusOK,
-					},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: true,
+				Result: &metav1.Status{
+					Message: "not a VM",
+					Code:    http.StatusOK,
 				},
 			},
 		}),
@@ -240,13 +231,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyNAD(nadName),
 			},
 			inputPod: dummyPodForVM("{not json}", vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed: false,
-					Result: &metav1.Status{
-						Message: "failed to parse pod network selection elements",
-						Code:    http.StatusBadRequest,
-					},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Message: "failed to parse pod network selection elements",
+					Code:    http.StatusBadRequest,
 				},
 			},
 		}),
@@ -254,13 +243,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName),
 			inputPod: dummyPodForVM(nadName, vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed: true,
-					Result: &metav1.Status{
-						Message: "carry on",
-						Code:    http.StatusOK,
-					},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: true,
+				Result: &metav1.Status{
+					Message: "carry on",
+					Code:    http.StatusOK,
 				},
 			},
 		}),
@@ -269,13 +256,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				dummyNAD(nadName),
 			},
 			inputPod: dummyPodForVM(nadName, vmName),
-			expectedAdmissionResponse: admission.Response{
-				AdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed: false,
-					Result: &metav1.Status{
-						Message: "virtualmachineinstances.kubevirt.io \"vm1\" not found",
-						Code:    http.StatusInternalServerError,
-					},
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Message: "virtualmachineinstances.kubevirt.io \"vm1\" not found",
+					Code:    http.StatusInternalServerError,
 				},
 			},
 		}),
