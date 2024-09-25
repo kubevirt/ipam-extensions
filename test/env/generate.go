@@ -97,6 +97,80 @@ func GenerateAlpineWithMultusVMI(namespace, interfaceName, networkName string) *
 	}
 }
 
+func GenerateAlpineWithPrimaryUDNVMI(namespace string) *kubevirtv1.VirtualMachineInstance {
+	const interfaceName = "passtnet"
+	return &kubevirtv1.VirtualMachineInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      RandomName("alpine", 16),
+		},
+		Spec: kubevirtv1.VirtualMachineInstanceSpec{
+			Domain: kubevirtv1.DomainSpec{
+				Resources: kubevirtv1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("2048Mi"),
+					},
+				},
+				Devices: kubevirtv1.Devices{
+					Disks: []kubevirtv1.Disk{
+						{
+							DiskDevice: kubevirtv1.DiskDevice{
+								Disk: &kubevirtv1.DiskTarget{
+									Bus: kubevirtv1.DiskBusVirtio,
+								},
+							},
+							Name: "containerdisk",
+						},
+					},
+					Interfaces: []kubevirtv1.Interface{
+						{
+							Name: interfaceName,
+							Binding: &kubevirtv1.PluginBinding{
+								Name: "passt",
+							},
+						},
+					},
+				},
+			},
+			Networks: []kubevirtv1.Network{
+				{
+					Name: interfaceName,
+					NetworkSource: kubevirtv1.NetworkSource{
+						Pod: &kubevirtv1.PodNetwork{},
+					},
+				},
+			},
+			TerminationGracePeriodSeconds: pointer.Int64(5),
+			Volumes: []kubevirtv1.Volume{
+				{
+					Name: "containerdisk",
+					VolumeSource: kubevirtv1.VolumeSource{
+						ContainerDisk: &kubevirtv1.ContainerDiskSource{
+							Image: "quay.io/kubevirtci/alpine-container-disk-demo:devel_alt",
+						},
+					},
+				},
+				{
+					Name: "cloudinitdisk",
+					VolumeSource: kubevirtv1.VolumeSource{
+						CloudInitNoCloud: &kubevirtv1.CloudInitNoCloudSource{
+							NetworkData: cloudInitNetworkData(),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func cloudInitNetworkData() string {
+	return `
+version: 2
+ethernets:
+  eth0:
+    dhcp4: true`
+}
+
 type VMOption func(vm *kubevirtv1.VirtualMachine)
 
 func NewVirtualMachine(vmi *kubevirtv1.VirtualMachineInstance, opts ...VMOption) *kubevirtv1.VirtualMachine {
