@@ -28,37 +28,16 @@ func IPAMClaimsFromNamespace(namespace string) func() ([]ipamclaimsv1alpha1.IPAM
 	}
 }
 
-func lookupInterfaceStatusByName(interfaces []kubevirtv1.VirtualMachineInstanceNetworkInterface, name string) *kubevirtv1.VirtualMachineInstanceNetworkInterface {
-	for index := range interfaces {
-		if interfaces[index].Name == name {
-			return &interfaces[index]
-		}
-	}
-	return nil
-}
-
-func VMIStatusInterfaces(vmi *kubevirtv1.VirtualMachineInstance) []kubevirtv1.VirtualMachineInstanceNetworkInterface {
-	return vmi.Status.Interfaces
-}
 func vmiStatusConditions(vmi *kubevirtv1.VirtualMachineInstance) []kubevirtv1.VirtualMachineInstanceCondition {
 	return vmi.Status.Conditions
 }
 
-func interfaceIPs(networkInterface *kubevirtv1.VirtualMachineInstanceNetworkInterface) []string {
-	if networkInterface == nil {
-		return nil
-	}
-	return networkInterface.IPs
-}
-
-func MatchIPsAtInterfaceByName(interfaceName string, ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
-	return WithTransform(
-		func(vmi *kubevirtv1.VirtualMachineInstance) *kubevirtv1.VirtualMachineInstanceNetworkInterface {
-			return lookupInterfaceStatusByName(vmi.Status.Interfaces, interfaceName)
-		},
-		SatisfyAll(
-			Not(BeNil()),
-			WithTransform(interfaceIPs, ipsMatcher)))
+func MatchIPs(getIPsFunc func(vmi *kubevirtv1.VirtualMachineInstance) []string, ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
+	return WithTransform(func(vmi *kubevirtv1.VirtualMachineInstance) []string {
+		return getIPsFunc(vmi)
+	}, SatisfyAll(
+		WithTransform(func(ips []string) []string { return ips }, ipsMatcher),
+	))
 }
 
 func BeRestarted(oldUID types.UID) gomegatypes.GomegaMatcher {
