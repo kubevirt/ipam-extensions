@@ -45,7 +45,17 @@ const (
 	nadName                              = "l2-net-attach-def"
 )
 
-var _ = Describe("Persistent IPs", func() {
+const (
+	roleSecondary = "secondary"
+)
+
+type testParams struct {
+	role    string
+	ipsFrom func(vmi *kubevirtv1.VirtualMachineInstance) []string
+	vmi     func(namespace string) *kubevirtv1.VirtualMachineInstance
+}
+
+var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 	var failureCount int = 0
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
@@ -62,15 +72,12 @@ var _ = Describe("Persistent IPs", func() {
 
 	When("network attachment definition created with allowPersistentIPs=true", func() {
 		var (
-			td      testenv.TestData
-			ipsFrom func(vmi *kubevirtv1.VirtualMachineInstance) []string
-			role    = "secondary"
-			vm      *kubevirtv1.VirtualMachine
-			vmi     *kubevirtv1.VirtualMachineInstance
-			nad     *nadv1.NetworkAttachmentDefinition
+			td  testenv.TestData
+			vm  *kubevirtv1.VirtualMachine
+			vmi *kubevirtv1.VirtualMachineInstance
+			nad *nadv1.NetworkAttachmentDefinition
 		)
 
-		ipsFrom = secondaryNetworkVMIStatusIPs
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
 			td.SetUp()
@@ -78,8 +85,8 @@ var _ = Describe("Persistent IPs", func() {
 				td.TearDown()
 			})
 
-			nad = testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, role)
-			vmi = vmiWithMultus(td.Namespace)
+			nad = testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, params.role)
+			vmi = params.vmi(td.Namespace)
 			vm = testenv.NewVirtualMachine(vmi, testenv.WithRunning())
 
 			By("Create NetworkAttachmentDefinition")
@@ -102,12 +109,12 @@ var _ = Describe("Persistent IPs", func() {
 					WithPolling(time.Second).
 					ShouldNot(BeEmpty())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(ipsFrom, Not(BeEmpty())))
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, Not(BeEmpty())))
 			})
 
 			It("should keep ips after live migration", func() {
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				vmiIPsBeforeMigration := ipsFrom(vmi)
+				vmiIPsBeforeMigration := params.ipsFrom(vmi)
 				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
@@ -119,7 +126,7 @@ var _ = Describe("Persistent IPs", func() {
 					WithTimeout(5 * time.Minute).
 					Should(testenv.ContainConditionVMIReady())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(ipsFrom, ConsistOf(vmiIPsBeforeMigration)))
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, ConsistOf(vmiIPsBeforeMigration)))
 			})
 
 			It("should garbage collect IPAMClaims after VM deletion", func() {
@@ -178,7 +185,7 @@ var _ = Describe("Persistent IPs", func() {
 
 			It("should keep ips after restart", func() {
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				vmiIPsBeforeRestart := ipsFrom(vmi)
+				vmiIPsBeforeRestart := params.ipsFrom(vmi)
 				Expect(vmiIPsBeforeRestart).NotTo(BeEmpty())
 				vmiUUIDBeforeRestart := vmi.UID
 
@@ -198,7 +205,7 @@ var _ = Describe("Persistent IPs", func() {
 					WithTimeout(5 * time.Minute).
 					Should(testenv.ContainConditionVMIReady())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(ipsFrom, ConsistOf(vmiIPsBeforeRestart)))
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, ConsistOf(vmiIPsBeforeRestart)))
 			})
 		})
 
@@ -225,7 +232,7 @@ var _ = Describe("Persistent IPs", func() {
 					ShouldNot(BeEmpty())
 
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				ips := ipsFrom(vmi)
+				ips := params.ipsFrom(vmi)
 				Expect(ips).NotTo(BeEmpty())
 			})
 
@@ -267,18 +274,18 @@ var _ = Describe("Persistent IPs", func() {
 					WithPolling(time.Second).
 					ShouldNot(BeEmpty())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(ipsFrom, Not(BeEmpty())))
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, Not(BeEmpty())))
 			})
 
 			It("should keep ips after live migration", func() {
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				vmiIPsBeforeMigration := ipsFrom(vmi)
+				vmiIPsBeforeMigration := params.ipsFrom(vmi)
 				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vmi.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vmi.Name)
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(ipsFrom, ConsistOf(vmiIPsBeforeMigration)))
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, ConsistOf(vmiIPsBeforeMigration)))
 			})
 
 			It("should garbage collect IPAMClaims after VMI deletion", func() {
@@ -299,7 +306,14 @@ var _ = Describe("Persistent IPs", func() {
 		})
 
 	})
-})
+},
+	Entry("secondary interfaces",
+		testParams{
+			role:    roleSecondary,
+			ipsFrom: secondaryNetworkVMIStatusIPs,
+			vmi:     vmiWithMultus,
+		}),
+)
 
 func foregroundDeleteOptions() *client.DeleteOptions {
 	foreground := metav1.DeletePropagationForeground
