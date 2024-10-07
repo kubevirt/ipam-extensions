@@ -40,7 +40,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const secondaryLogicalNetworkInterfaceName = "multus"
+const (
+	secondaryLogicalNetworkInterfaceName = "multus"
+	nadName                              = "l2-net-attach-def"
+)
 
 var _ = Describe("Persistent IPs", func() {
 	var failureCount int = 0
@@ -75,8 +78,8 @@ var _ = Describe("Persistent IPs", func() {
 				td.TearDown()
 			})
 
-			nad = testenv.GenerateLayer2WithSubnetNAD(td.Namespace, role)
-			vmi = testenv.GenerateAlpineWithMultusVMI(td.Namespace, secondaryLogicalNetworkInterfaceName, nad.Name)
+			nad = testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, role)
+			vmi = vmiWithMultus(td.Namespace)
 			vm = testenv.NewVirtualMachine(vmi, testenv.WithRunning())
 
 			By("Create NetworkAttachmentDefinition")
@@ -316,4 +319,27 @@ func removeFinalizersPatch() ([]byte, error) {
 
 func secondaryNetworkVMIStatusIPs(vmi *kubevirtv1.VirtualMachineInstance) []string {
 	return testenv.GetIPsFromVMIStatus(vmi, secondaryLogicalNetworkInterfaceName)
+}
+
+func vmiWithMultus(namespace string) *kubevirtv1.VirtualMachineInstance {
+	interfaceName := secondaryLogicalNetworkInterfaceName
+	return testenv.NewVirtualMachineInstance(
+		namespace,
+		testenv.WithMemory("128Mi"),
+		testenv.WithInterface(kubevirtv1.Interface{
+			Name: interfaceName,
+			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+				Bridge: &kubevirtv1.InterfaceBridge{},
+			},
+		}),
+		testenv.WithNetwork(kubevirtv1.Network{
+
+			Name: interfaceName,
+			NetworkSource: kubevirtv1.NetworkSource{
+				Multus: &kubevirtv1.MultusNetwork{
+					NetworkName: nadName,
+				},
+			},
+		}),
+	)
 }

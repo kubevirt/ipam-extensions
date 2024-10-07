@@ -13,9 +13,8 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-func GenerateLayer2WithSubnetNAD(namespace, role string) *nadv1.NetworkAttachmentDefinition {
+func GenerateLayer2WithSubnetNAD(nadName, namespace, role string) *nadv1.NetworkAttachmentDefinition {
 	networkName := "l2"
-	nadName := RandomName(networkName, 16)
 	return &nadv1.NetworkAttachmentDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
@@ -38,19 +37,16 @@ func GenerateLayer2WithSubnetNAD(namespace, role string) *nadv1.NetworkAttachmen
 	}
 }
 
-func GenerateAlpineWithMultusVMI(namespace, interfaceName, networkName string) *kubevirtv1.VirtualMachineInstance {
-	return &kubevirtv1.VirtualMachineInstance{
+type VMIOption func(vmi *kubevirtv1.VirtualMachineInstance)
+
+func NewVirtualMachineInstance(namespace string, opts ...VMIOption) *kubevirtv1.VirtualMachineInstance {
+	vmi := &kubevirtv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      RandomName("alpine", 16),
 		},
 		Spec: kubevirtv1.VirtualMachineInstanceSpec{
 			Domain: kubevirtv1.DomainSpec{
-				Resources: kubevirtv1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("128Mi"),
-					},
-				},
 				Devices: kubevirtv1.Devices{
 					Disks: []kubevirtv1.Disk{
 						{
@@ -62,26 +58,10 @@ func GenerateAlpineWithMultusVMI(namespace, interfaceName, networkName string) *
 							Name: "containerdisk",
 						},
 					},
-					Interfaces: []kubevirtv1.Interface{
-						{
-							Name: interfaceName,
-							InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
-								Bridge: &kubevirtv1.InterfaceBridge{},
-							},
-						},
-					},
+					Interfaces: []kubevirtv1.Interface{},
 				},
 			},
-			Networks: []kubevirtv1.Network{
-				{
-					Name: interfaceName,
-					NetworkSource: kubevirtv1.NetworkSource{
-						Multus: &kubevirtv1.MultusNetwork{
-							NetworkName: networkName,
-						},
-					},
-				},
-			},
+			Networks:                      []kubevirtv1.Network{},
 			TerminationGracePeriodSeconds: pointer.Int64(5),
 			Volumes: []kubevirtv1.Volume{
 				{
@@ -94,6 +74,32 @@ func GenerateAlpineWithMultusVMI(namespace, interfaceName, networkName string) *
 				},
 			},
 		},
+	}
+
+	for _, f := range opts {
+		f(vmi)
+	}
+
+	return vmi
+}
+
+func WithMemory(memory string) VMIOption {
+	return func(vmi *kubevirtv1.VirtualMachineInstance) {
+		vmi.Spec.Domain.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memory),
+		}
+	}
+}
+
+func WithInterface(iface kubevirtv1.Interface) VMIOption {
+	return func(vmi *kubevirtv1.VirtualMachineInstance) {
+		vmi.Spec.Domain.Devices.Interfaces = append(vmi.Spec.Domain.Devices.Interfaces, iface)
+	}
+}
+
+func WithNetwork(network kubevirtv1.Network) VMIOption {
+	return func(vmi *kubevirtv1.VirtualMachineInstance) {
+		vmi.Spec.Networks = append(vmi.Spec.Networks, network)
 	}
 }
 
