@@ -46,6 +46,7 @@ const (
 )
 
 const (
+	rolePrimary   = "primary"
 	roleSecondary = "secondary"
 )
 
@@ -316,6 +317,12 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 			role:    roleSecondary,
 			ipsFrom: secondaryNetworkVMIStatusIPs,
 			vmi:     vmiWithMultus,
+		}),
+	Entry("primary UDN",
+		testParams{
+			role:    rolePrimary,
+			ipsFrom: defaultNetworkStatusAnnotationIPs,
+			vmi:     vmiWithPasst,
 		}),
 )
 
