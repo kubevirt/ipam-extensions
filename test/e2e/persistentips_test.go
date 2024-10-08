@@ -40,7 +40,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Persistent IPs", func() {
+const (
+	secondaryLogicalNetworkInterfaceName = "multus"
+	nadName                              = "l2-net-attach-def"
+)
+
+const (
+	rolePrimary   = "primary"
+	roleSecondary = "secondary"
+)
+
+type testParams struct {
+	role    string
+	ipsFrom func(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error)
+	vmi     func(namespace string) *kubevirtv1.VirtualMachineInstance
+}
+
+var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 	var failureCount int = 0
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
@@ -57,12 +73,12 @@ var _ = Describe("Persistent IPs", func() {
 
 	When("network attachment definition created with allowPersistentIPs=true", func() {
 		var (
-			td                   testenv.TestData
-			networkInterfaceName = "multus"
-			vm                   *kubevirtv1.VirtualMachine
-			vmi                  *kubevirtv1.VirtualMachineInstance
-			nad                  *nadv1.NetworkAttachmentDefinition
+			td  testenv.TestData
+			vm  *kubevirtv1.VirtualMachine
+			vmi *kubevirtv1.VirtualMachineInstance
+			nad *nadv1.NetworkAttachmentDefinition
 		)
+
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
 			td.SetUp()
@@ -70,8 +86,8 @@ var _ = Describe("Persistent IPs", func() {
 				td.TearDown()
 			})
 
-			nad = testenv.GenerateLayer2WithSubnetNAD(td.Namespace)
-			vmi = testenv.GenerateAlpineWithMultusVMI(td.Namespace, networkInterfaceName, nad.Name)
+			nad = testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, params.role)
+			vmi = params.vmi(td.Namespace)
 			vm = testenv.NewVirtualMachine(vmi, testenv.WithRunning())
 
 			By("Create NetworkAttachmentDefinition")
@@ -94,14 +110,14 @@ var _ = Describe("Persistent IPs", func() {
 					WithPolling(time.Second).
 					ShouldNot(BeEmpty())
 
-				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-
-				Expect(vmi.Status.Interfaces).NotTo(BeEmpty())
-				Expect(vmi.Status.Interfaces[0].IPs).NotTo(BeEmpty())
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, Not(BeEmpty())))
 			})
 
 			It("should keep ips after live migration", func() {
-				vmiIPsBeforeMigration := vmi.Status.Interfaces[0].IPs
+				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
+				vmiIPsBeforeMigration, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vm.Name)
@@ -112,8 +128,7 @@ var _ = Describe("Persistent IPs", func() {
 					WithTimeout(5 * time.Minute).
 					Should(testenv.ContainConditionVMIReady())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
-
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, ConsistOf(vmiIPsBeforeMigration)))
 			})
 
 			It("should garbage collect IPAMClaims after VM deletion", func() {
@@ -171,7 +186,10 @@ var _ = Describe("Persistent IPs", func() {
 			})
 
 			It("should keep ips after restart", func() {
-				vmiIPsBeforeRestart := vmi.Status.Interfaces[0].IPs
+				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
+				vmiIPsBeforeRestart, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vmiIPsBeforeRestart).NotTo(BeEmpty())
 				vmiUUIDBeforeRestart := vmi.UID
 
 				By("Re-starting the VM")
@@ -190,7 +208,7 @@ var _ = Describe("Persistent IPs", func() {
 					WithTimeout(5 * time.Minute).
 					Should(testenv.ContainConditionVMIReady())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(networkInterfaceName, ConsistOf(vmiIPsBeforeRestart)))
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, ConsistOf(vmiIPsBeforeRestart)))
 			})
 		})
 
@@ -217,9 +235,9 @@ var _ = Describe("Persistent IPs", func() {
 					ShouldNot(BeEmpty())
 
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-
-				Expect(vmi.Status.Interfaces).NotTo(BeEmpty())
-				Expect(vmi.Status.Interfaces[0].IPs).NotTo(BeEmpty())
+				ips, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ips).NotTo(BeEmpty())
 			})
 
 			It("should garbage collect IPAMClaims after VM foreground deletion, only after VMI is gone", func() {
@@ -260,20 +278,19 @@ var _ = Describe("Persistent IPs", func() {
 					WithPolling(time.Second).
 					ShouldNot(BeEmpty())
 
-				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-
-				Expect(vmi.Status.Interfaces).NotTo(BeEmpty())
-				Expect(vmi.Status.Interfaces[0].IPs).NotTo(BeEmpty())
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, Not(BeEmpty())))
 			})
 
 			It("should keep ips after live migration", func() {
-				vmiIPsBeforeMigration := vmi.Status.Interfaces[0].IPs
+				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
+				vmiIPsBeforeMigration, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vmi.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vmi.Name)
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
-
+				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPs(params.ipsFrom, ConsistOf(vmiIPsBeforeMigration)))
 			})
 
 			It("should garbage collect IPAMClaims after VMI deletion", func() {
@@ -294,7 +311,20 @@ var _ = Describe("Persistent IPs", func() {
 		})
 
 	})
-})
+},
+	Entry("secondary interfaces",
+		testParams{
+			role:    roleSecondary,
+			ipsFrom: secondaryNetworkVMIStatusIPs,
+			vmi:     vmiWithMultus,
+		}),
+	Entry("primary UDN",
+		testParams{
+			role:    rolePrimary,
+			ipsFrom: defaultNetworkStatusAnnotationIPs,
+			vmi:     vmiWithPasst,
+		}),
+)
 
 func foregroundDeleteOptions() *client.DeleteOptions {
 	foreground := metav1.DeletePropagationForeground
@@ -310,4 +340,68 @@ func removeFinalizersPatch() ([]byte, error) {
 		},
 	}
 	return json.Marshal(patch)
+}
+
+func secondaryNetworkVMIStatusIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error) {
+	return testenv.GetIPsFromVMIStatus(vmi, secondaryLogicalNetworkInterfaceName), nil
+}
+
+func defaultNetworkStatusAnnotationIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error) {
+	defNetworkStatus, err := testenv.DefaultNetworkStatus(vmi)
+	if err != nil {
+		return nil, err
+	}
+
+	return defNetworkStatus.IPs, nil
+}
+
+func vmiWithMultus(namespace string) *kubevirtv1.VirtualMachineInstance {
+	interfaceName := secondaryLogicalNetworkInterfaceName
+	return testenv.NewVirtualMachineInstance(
+		namespace,
+		testenv.WithMemory("128Mi"),
+		testenv.WithInterface(kubevirtv1.Interface{
+			Name: interfaceName,
+			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+				Bridge: &kubevirtv1.InterfaceBridge{},
+			},
+		}),
+		testenv.WithNetwork(kubevirtv1.Network{
+
+			Name: interfaceName,
+			NetworkSource: kubevirtv1.NetworkSource{
+				Multus: &kubevirtv1.MultusNetwork{
+					NetworkName: nadName,
+				},
+			},
+		}),
+	)
+}
+
+func vmiWithPasst(namespace string) *kubevirtv1.VirtualMachineInstance {
+	const (
+		interfaceName        = "passtnet"
+		cloudInitNetworkData = `
+version: 2
+ethernets:
+  eth0:
+    dhcp4: true`
+	)
+	return testenv.NewVirtualMachineInstance(
+		namespace,
+		testenv.WithMemory("2048Mi"),
+		testenv.WithInterface(kubevirtv1.Interface{
+			Name: interfaceName,
+			Binding: &kubevirtv1.PluginBinding{
+				Name: "passt",
+			},
+		}),
+		testenv.WithNetwork(kubevirtv1.Network{
+			Name: interfaceName,
+			NetworkSource: kubevirtv1.NetworkSource{
+				Pod: &kubevirtv1.PodNetwork{},
+			},
+		}),
+		testenv.WithCloudInitNoCloudVolume(cloudInitNetworkData),
+	)
 }
