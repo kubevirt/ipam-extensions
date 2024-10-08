@@ -51,7 +51,7 @@ const (
 
 type testParams struct {
 	role    string
-	ipsFrom func(vmi *kubevirtv1.VirtualMachineInstance) []string
+	ipsFrom func(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error)
 	vmi     func(namespace string) *kubevirtv1.VirtualMachineInstance
 }
 
@@ -114,7 +114,8 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 			It("should keep ips after live migration", func() {
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				vmiIPsBeforeMigration := params.ipsFrom(vmi)
+				vmiIPsBeforeMigration, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
 				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
@@ -185,7 +186,8 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 			It("should keep ips after restart", func() {
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				vmiIPsBeforeRestart := params.ipsFrom(vmi)
+				vmiIPsBeforeRestart, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
 				Expect(vmiIPsBeforeRestart).NotTo(BeEmpty())
 				vmiUUIDBeforeRestart := vmi.UID
 
@@ -232,7 +234,8 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 					ShouldNot(BeEmpty())
 
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				ips := params.ipsFrom(vmi)
+				ips, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
 				Expect(ips).NotTo(BeEmpty())
 			})
 
@@ -279,7 +282,8 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 			It("should keep ips after live migration", func() {
 				Expect(testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(vmi), vmi)).To(Succeed())
-				vmiIPsBeforeMigration := params.ipsFrom(vmi)
+				vmiIPsBeforeMigration, err := params.ipsFrom(vmi)
+				Expect(err).NotTo(HaveOccurred())
 				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vmi.Name)
@@ -331,8 +335,17 @@ func removeFinalizersPatch() ([]byte, error) {
 	return json.Marshal(patch)
 }
 
-func secondaryNetworkVMIStatusIPs(vmi *kubevirtv1.VirtualMachineInstance) []string {
-	return testenv.GetIPsFromVMIStatus(vmi, secondaryLogicalNetworkInterfaceName)
+func secondaryNetworkVMIStatusIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error) {
+	return testenv.GetIPsFromVMIStatus(vmi, secondaryLogicalNetworkInterfaceName), nil
+}
+
+func defaultNetworkStatusAnnotationIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error) {
+	defNetworkStatus, err := testenv.DefaultNetworkStatus(vmi)
+	if err != nil {
+		return nil, err
+	}
+
+	return defNetworkStatus.IPs, nil
 }
 
 func vmiWithMultus(namespace string) *kubevirtv1.VirtualMachineInstance {
@@ -355,5 +368,33 @@ func vmiWithMultus(namespace string) *kubevirtv1.VirtualMachineInstance {
 				},
 			},
 		}),
+	)
+}
+
+func vmiWithPasst(namespace string) *kubevirtv1.VirtualMachineInstance {
+	const (
+		interfaceName        = "passtnet"
+		cloudInitNetworkData = `
+version: 2
+ethernets:
+  eth0:
+    dhcp4: true`
+	)
+	return testenv.NewVirtualMachineInstance(
+		namespace,
+		testenv.WithMemory("2048Mi"),
+		testenv.WithInterface(kubevirtv1.Interface{
+			Name: interfaceName,
+			Binding: &kubevirtv1.PluginBinding{
+				Name: "passt",
+			},
+		}),
+		testenv.WithNetwork(kubevirtv1.Network{
+			Name: interfaceName,
+			NetworkSource: kubevirtv1.NetworkSource{
+				Pod: &kubevirtv1.PodNetwork{},
+			},
+		}),
+		testenv.WithCloudInitNoCloudVolume(cloudInitNetworkData),
 	)
 }

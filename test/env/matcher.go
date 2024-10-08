@@ -32,11 +32,18 @@ func vmiStatusConditions(vmi *kubevirtv1.VirtualMachineInstance) []kubevirtv1.Vi
 	return vmi.Status.Conditions
 }
 
-func MatchIPs(getIPsFunc func(vmi *kubevirtv1.VirtualMachineInstance) []string, ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
-	return WithTransform(func(vmi *kubevirtv1.VirtualMachineInstance) []string {
-		return getIPsFunc(vmi)
+type IPResult struct {
+	IPs []string
+	Err error
+}
+
+func MatchIPs(getIPsFunc func(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error), ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
+	return WithTransform(func(vmi *kubevirtv1.VirtualMachineInstance) IPResult {
+		ips, err := getIPsFunc(vmi)
+		return IPResult{IPs: ips, Err: err}
 	}, SatisfyAll(
-		WithTransform(func(ips []string) []string { return ips }, ipsMatcher),
+		WithTransform(func(result IPResult) error { return result.Err }, Succeed()),
+		WithTransform(func(result IPResult) []string { return result.IPs }, ipsMatcher),
 	))
 }
 

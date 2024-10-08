@@ -103,6 +103,19 @@ func WithNetwork(network kubevirtv1.Network) VMIOption {
 	}
 }
 
+func WithCloudInitNoCloudVolume(cloudInitNetworkData string) VMIOption {
+	return func(vmi *kubevirtv1.VirtualMachineInstance) {
+		vmi.Spec.Volumes = append(vmi.Spec.Volumes, kubevirtv1.Volume{
+			Name: "cloudinitdisk",
+			VolumeSource: kubevirtv1.VolumeSource{
+				CloudInitNoCloud: &kubevirtv1.CloudInitNoCloudSource{
+					NetworkData: cloudInitNetworkData,
+				},
+			},
+		})
+	}
+}
+
 type VMOption func(vm *kubevirtv1.VirtualMachine)
 
 func NewVirtualMachine(vmi *kubevirtv1.VirtualMachineInstance, opts ...VMOption) *kubevirtv1.VirtualMachine {
