@@ -36,12 +36,14 @@ import (
 
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
-	testenv "github.com/kubevirt/ipam-extensions/test/env"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	testenv "github.com/kubevirt/ipam-extensions/test/env"
 )
 
 const (
 	secondaryLogicalNetworkInterfaceName = "multus"
+	primaryLogicalNetworkInterfaceName   = "pod"
 	nadName                              = "l2-net-attach-def"
 )
 
@@ -321,7 +323,7 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 	Entry("primary UDN",
 		testParams{
 			role:    rolePrimary,
-			ipsFrom: defaultNetworkStatusAnnotationIPs,
+			ipsFrom: primaryNetworkVMIStatusIPs,
 			vmi:     vmiWithManagedTap,
 		}),
 )
@@ -346,13 +348,8 @@ func secondaryNetworkVMIStatusIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]str
 	return testenv.GetIPsFromVMIStatus(vmi, secondaryLogicalNetworkInterfaceName), nil
 }
 
-func defaultNetworkStatusAnnotationIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error) {
-	defNetworkStatus, err := testenv.DefaultNetworkStatus(vmi)
-	if err != nil {
-		return nil, err
-	}
-
-	return defNetworkStatus.IPs, nil
+func primaryNetworkVMIStatusIPs(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error) {
+	return testenv.GetIPsFromVMIStatus(vmi, primaryLogicalNetworkInterfaceName), nil
 }
 
 func vmiWithMultus(namespace string) *kubevirtv1.VirtualMachineInstance {
@@ -380,7 +377,7 @@ func vmiWithMultus(namespace string) *kubevirtv1.VirtualMachineInstance {
 
 func vmiWithManagedTap(namespace string) *kubevirtv1.VirtualMachineInstance {
 	const (
-		interfaceName        = "pod"
+		interfaceName        = primaryLogicalNetworkInterfaceName
 		cloudInitNetworkData = `
 version: 2
 ethernets:
