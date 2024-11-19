@@ -32,19 +32,21 @@ func vmiStatusConditions(vmi *kubevirtv1.VirtualMachineInstance) []kubevirtv1.Vi
 	return vmi.Status.Conditions
 }
 
-type IPResult struct {
-	IPs []string
-	Err error
+func interfaceIPs(networkInterface *kubevirtv1.VirtualMachineInstanceNetworkInterface) []string {
+	if networkInterface == nil {
+		return nil
+	}
+	return networkInterface.IPs
 }
 
-func MatchIPs(getIPsFunc func(vmi *kubevirtv1.VirtualMachineInstance) ([]string, error), ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
-	return WithTransform(func(vmi *kubevirtv1.VirtualMachineInstance) IPResult {
-		ips, err := getIPsFunc(vmi)
-		return IPResult{IPs: ips, Err: err}
-	}, SatisfyAll(
-		WithTransform(func(result IPResult) error { return result.Err }, Succeed()),
-		WithTransform(func(result IPResult) []string { return result.IPs }, ipsMatcher),
-	))
+func MatchIPsAtInterfaceByName(interfaceName string, ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
+	return WithTransform(
+		func(vmi *kubevirtv1.VirtualMachineInstance) *kubevirtv1.VirtualMachineInstanceNetworkInterface {
+			return lookupInterfaceStatusByName(vmi.Status.Interfaces, interfaceName)
+		},
+		SatisfyAll(
+			Not(BeNil()),
+			WithTransform(interfaceIPs, ipsMatcher)))
 }
 
 func BeRestarted(oldUID types.UID) gomegatypes.GomegaMatcher {
