@@ -63,7 +63,7 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
 			failureCount++
-			By(fmt.Sprintf("Test failed, collecting logs and artifacts, failure count %d", failureCount))
+			By(fmt.Sprintf("Test failed, collecting logs and artifacts, failure count %d, process %d", failureCount, GinkgoParallelProcess()))
 
 			logCommand([]string{"get", "pods", "-A"}, "pods", failureCount)
 			logCommand([]string{"get", "vm", "-A", "-oyaml"}, "vms", failureCount)

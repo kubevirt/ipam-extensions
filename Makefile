@@ -77,7 +77,7 @@ test-e2e: ginkgo
 	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
 	export REPORT_PATH=$$(pwd)/.output/ && \
 	cd test/e2e && \
-	$(GINKGO) -v --timeout=1h --junit-report=${REPORT_PATH}/test-e2e.junit.xml
+	$(GINKGO) -p -v --timeout=1h --junit-report=${REPORT_PATH}/test-e2e.junit.xml
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter & yamllint
