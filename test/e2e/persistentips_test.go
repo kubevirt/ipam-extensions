@@ -120,6 +120,10 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				vmiIPsBeforeMigration := testenv.GetIPsFromVMIStatus(vmi, params.networkInterfaceName)
 				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
+				virtLauncherPod, err := testenv.VirtualMachineInstancePod(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				fmt.Printf("\nRAM B4 Migration vmi %s virtLauncherPod %s Annotations %+v\n", vmi.Name, virtLauncherPod.Name, virtLauncherPod.Annotations)
+
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vm.Name)
 
@@ -128,6 +132,10 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 					WithPolling(time.Second).
 					WithTimeout(5 * time.Minute).
 					Should(testenv.ContainConditionVMIReady())
+
+				virtLauncherPod, err = testenv.VirtualMachineInstancePod(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				fmt.Printf("\nRAM After Migration vmi %s virtLauncherPod %s Annotations %+v\n", vmi.Name, virtLauncherPod.Name, virtLauncherPod.Annotations)
 
 				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
 			})
@@ -285,8 +293,16 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				vmiIPsBeforeMigration := testenv.GetIPsFromVMIStatus(vmi, params.networkInterfaceName)
 				Expect(vmiIPsBeforeMigration).NotTo(BeEmpty())
 
+				virtLauncherPod, err := testenv.VirtualMachineInstancePod(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				fmt.Printf("\nRAM B4 Migration vmi %s virtLauncherPod %s Annotations %+v\n", vmi.Name, virtLauncherPod.Name, virtLauncherPod.Annotations)
+
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vmi.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vmi.Name)
+
+				virtLauncherPod, err = testenv.VirtualMachineInstancePod(vmi)
+				Expect(err).NotTo(HaveOccurred())
+				fmt.Printf("\nRAM After Migration vmi %s virtLauncherPod %s Annotations %+v\n", vmi.Name, virtLauncherPod.Name, virtLauncherPod.Annotations)
 
 				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
 			})
