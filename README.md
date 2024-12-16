@@ -114,7 +114,7 @@ metadata:
     kubevirt.io/vm: vm-a
   name: vm-a
 spec:
-  running: true
+  runStrategy: Always
   template:
     metadata:
       name: vm-a
