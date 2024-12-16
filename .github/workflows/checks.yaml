@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-linters-unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
 
     - uses: actions/checkout@v3
@@ -39,7 +39,7 @@ jobs:
     - name: Test
       run: ENVTEST_VERSION="release-0.17" make test
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
 
     - uses: actions/checkout@v3

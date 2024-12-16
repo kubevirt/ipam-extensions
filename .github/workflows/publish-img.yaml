@@ -13,7 +13,7 @@ env:
 jobs:
   push-amd64:
     name: Image push/amd64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     permissions:
       contents: write
