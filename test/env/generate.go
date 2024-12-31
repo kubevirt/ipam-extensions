@@ -2,10 +2,12 @@ package env
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/pointer"
 
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -14,7 +16,8 @@ import (
 )
 
 func GenerateLayer2WithSubnetNAD(nadName, namespace, role string) *nadv1.NetworkAttachmentDefinition {
-	networkName := "l2"
+	const randCharacters = 5
+	networkName := strings.Join([]string{"l2", role, rand.String(randCharacters)}, "-")
 	return &nadv1.NetworkAttachmentDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
