@@ -9,10 +9,11 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: kubevirt/ipam-controller
   PASST_BINDING_CNI_IMAGE_NAME: kubevirt/passt-binding-cni
+  BUILD_PLATFORMS: linux/amd64,linux/arm64,linux/s390x
 
 jobs:
-  push-amd64:
-    name: Image push/amd64
+  push-image:
+    name: Image push
     runs-on: ubuntu-latest
 
     permissions:
@@ -53,6 +54,7 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           file: Dockerfile
+          platforms: ${{ env.BUILD_PLATFORMS }}
 
       - name: Push latest passt binding cni container image
         if: github.repository_owner == 'kubevirt'
@@ -73,6 +75,7 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           file: Dockerfile
+          platforms: ${{ env.BUILD_PLATFORMS }}
 
       - name: Push stable passt binding cni container image
         if: startsWith(github.ref, 'refs/tags/')
