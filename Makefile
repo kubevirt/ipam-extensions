@@ -27,7 +27,6 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 E2E_TEST_TIMEOUT ?= "1h"
-E2E_TEST_ARGS ?= ""
 
 .PHONY: all
 all: build
@@ -73,12 +72,12 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e:
+test-e2e: ginkgo
 	export KUBECONFIG=${KUBECONFIG} && \
 	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
 	export REPORT_PATH=$$(pwd)/.output/ && \
 	cd test/e2e && \
-	go test -test.v --ginkgo.v --test.timeout=${E2E_TEST_TIMEOUT} ${E2E_TEST_ARGS} --ginkgo.junit-report=$${REPORT_PATH}/test-e2e.junit.xml
+	$(GINKGO) -p -v --timeout=${E2E_TEST_TIMEOUT} --junit-report=$${REPORT_PATH}/test-e2e.junit.xml ${E2E_TEST_ARGS}
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter & yamllint
@@ -164,12 +163,14 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
 ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+GINKGO = $(LOCALBIN)/ginkgo-$(GINKGO_VERSION)
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v1.54.2
+GINKGO_VERSION ?= v2.22.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -190,6 +191,10 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
+
+.PHONY: ginkgo
+ginkgo:
+	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,${GINKGO_VERSION})
 
 .PHONY: cluster-up
 cluster-up:

@@ -59,7 +59,7 @@ func logCommand(args []string, topic string, failureCount int) {
 		return
 	}
 
-	fileName := fmt.Sprintf(logsDir+"/%d_%s.log", failureCount, topic)
+	fileName := fmt.Sprintf(logsDir+"/%d_%d_%s.log", GinkgoParallelProcess(), failureCount, topic)
 	file, err := os.Create(fileName)
 	if err != nil {
 		fmt.Printf("Error running command %v, err %v\n", args, err)
