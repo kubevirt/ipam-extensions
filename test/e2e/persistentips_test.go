@@ -83,7 +83,11 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
-			td.SetUp()
+			labels := map[string]string{}
+			if params.role == rolePrimary {
+				labels["k8s.ovn.org/primary-user-defined-network"] = ""
+			}
+			td.SetUp(labels)
 			DeferCleanup(func() {
 				td.TearDown()
 			})
@@ -378,7 +382,7 @@ ethernets:
 		testenv.WithInterface(kubevirtv1.Interface{
 			Name: interfaceName,
 			Binding: &kubevirtv1.PluginBinding{
-				Name: "managedTap",
+				Name: "l2bridge",
 			},
 		}),
 		testenv.WithNetwork(kubevirtv1.Network{
