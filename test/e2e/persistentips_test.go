@@ -378,7 +378,7 @@ ethernets:
 		testenv.WithInterface(kubevirtv1.Interface{
 			Name: interfaceName,
 			Binding: &kubevirtv1.PluginBinding{
-				Name: "managedTap",
+				Name: "l2bridge",
 			},
 		}),
 		testenv.WithNetwork(kubevirtv1.Network{
