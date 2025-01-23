@@ -83,7 +83,11 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
-			td.SetUp()
+			labels := map[string]string{}
+			if params.role == rolePrimary {
+				labels["k8s.ovn.org/primary-user-defined-network"] = ""
+			}
+			td.SetUp(labels)
 			DeferCleanup(func() {
 				td.TearDown()
 			})

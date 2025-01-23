@@ -55,10 +55,10 @@ func GenerateTestData() TestData {
 	}
 }
 
-func (td *TestData) SetUp() {
+func (td *TestData) SetUp(nsLabels map[string]string) {
 	GinkgoHelper()
 	By(fmt.Sprintf("Creating namespace %s", td.Namespace))
-	Expect(Client.Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: td.Namespace}})).To(Succeed())
+	Expect(Client.Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: td.Namespace, Labels: nsLabels}})).To(Succeed())
 }
 
 func (td *TestData) TearDown() {
