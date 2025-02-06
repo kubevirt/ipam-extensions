@@ -21,6 +21,9 @@ type RelevantConfig struct {
 
 func NewConfig(nadSpec string) (*RelevantConfig, error) {
 	nadConfig := &RelevantConfig{}
+	if nadSpec == "" {
+		return nadConfig, nil
+	}
 	if err := json.Unmarshal([]byte(nadSpec), nadConfig); err != nil {
 		return nil, fmt.Errorf("failed to extract CNI configuration from NAD: %w", err)
 	}
