@@ -8,8 +8,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: kubevirt/ipam-controller
-  PASST_BINDING_CNI_IMAGE_NAME: kubevirt/passt-binding-cni
-  BUILD_PLATFORMS: linux/amd64,linux/arm64,linux/s390x
 
 jobs:
   push-image:
@@ -41,11 +39,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch KubeVirt Release
-        run: |
-          KUBEVIRT_VERSION=$(curl -sSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
-          echo "KUBEVIRT_VERSION=${KUBEVIRT_VERSION}" >> $GITHUB_ENV
-
       - name: Push latest container image
         if: github.repository_owner == 'kubevirt'
         uses: docker/build-push-action@v5.3.0
@@ -56,18 +49,6 @@ jobs:
           file: Dockerfile
           platforms: ${{ env.BUILD_PLATFORMS }}
 
-      - name: Push latest passt binding cni container image
-        if: github.repository_owner == 'kubevirt'
-        uses: docker/build-push-action@v5.3.0
-        with:
-          context: .
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.PASST_BINDING_CNI_IMAGE_NAME }}:latest
-          file: passt/Dockerfile
-          platforms: ${{ env.BUILD_PLATFORMS }}
-          build-args: |
-            KUBEVIRT_VERSION=${{ env.KUBEVIRT_VERSION }}
-
       - name: Push stable container image
         if: startsWith(github.ref, 'refs/tags/')
         uses: docker/build-push-action@v5.3.0
@@ -77,18 +58,6 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           file: Dockerfile
           platforms: ${{ env.BUILD_PLATFORMS }}
-
-      - name: Push stable passt binding cni container image
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: docker/build-push-action@v5.3.0
-        with:
-          context: .
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.PASST_BINDING_CNI_IMAGE_NAME }}:${{ github.ref_name }}
-          file: passt/Dockerfile
-          platforms: ${{ env.BUILD_PLATFORMS }}
-          build-args: |
-            KUBEVIRT_VERSION=${{ env.KUBEVIRT_VERSION }}
 
       - name: Template release manifests
         if: startsWith(github.ref, 'refs/tags/')
