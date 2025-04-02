@@ -8,6 +8,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: kubevirt/ipam-controller
+  BUILD_PLATFORMS: linux/amd64,linux/arm64,linux/s390x
 
 jobs:
   push-image:
