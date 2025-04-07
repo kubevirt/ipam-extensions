@@ -68,9 +68,9 @@ vendor:
 	go mod tidy
 	go mod vendor
 
-.PHONY: check
-check: vendor fmt vet
-	./hack/check.sh
+.PHONY: check-vendoring
+check-vendoring: vendor fmt vet
+	./hack/check-vendoring.sh
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.

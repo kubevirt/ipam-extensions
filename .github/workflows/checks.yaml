@@ -17,8 +17,8 @@ jobs:
       with:
         go-version-file: 'go.mod'
 
-    - name: Check
-      run: make check
+    - name: Check vendoring
+      run: make check-vendoring
 
     - name: Build
       run: time make
