@@ -45,7 +45,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 	defer cancel()
 
 	shouldRemoveFinalizer := false
-	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vm)
+	err := r.Get(contextWithTimeout, request.NamespacedName, vm)
 	if apierrors.IsNotFound(err) {
 		shouldRemoveFinalizer = true
 	} else if err != nil {
@@ -56,7 +56,7 @@ func (r *VirtualMachineReconciler) Reconcile(
 		vmi := &virtv1.VirtualMachineInstance{}
 		contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
+		err := r.Get(contextWithTimeout, request.NamespacedName, vmi)
 		if apierrors.IsNotFound(err) {
 			shouldRemoveFinalizer = true
 		} else if err != nil {
