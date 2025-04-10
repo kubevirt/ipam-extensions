@@ -26,7 +26,7 @@ jobs:
     - name: Linters
       uses: golangci/golangci-lint-action@v3
       with:
-        version: v1.57.2
+        version: v2.0.2
         args: --timeout 3m --verbose cmd/... pkg/...
 
     - name: Ensure latest install manifest
