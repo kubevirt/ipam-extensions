@@ -1,0 +1,68 @@
+{
+  "formatters": {
+    "enable": [
+      "gofmt",
+      "goimports"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ]
+    }
+  },
+  "linters": {
+    "default": "none",
+    "enable": [
+      "copyloopvar",
+      "dupl",
+      "errcheck",
+      "goconst",
+      "gocyclo",
+      "govet",
+      "ineffassign",
+      "lll",
+      "misspell",
+      "nakedret",
+      "prealloc",
+      "staticcheck",
+      "unconvert",
+      "unused"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ],
+      "rules": [
+        {
+          "linters": [
+            "lll"
+          ],
+          "path": "api/*"
+        },
+        {
+          "linters": [
+            "dupl",
+            "lll"
+          ],
+          "path": "internal/*"
+        },
+        {
+          "linters": [
+            "lll"
+          ],
+          "source": "^// \\+kubebuilder"
+        }
+      ]
+    }
+  },
+  "run": {
+    "allow-parallel-runners": true
+  },
+  "version": "2"
+}
