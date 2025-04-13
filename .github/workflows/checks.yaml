@@ -40,7 +40,7 @@ jobs:
         fi
 
     - name: Test
-      run: ENVTEST_VERSION="release-0.17" make test
+      run: ENVTEST_VERSION="release-0.20" make test
   e2e:
     runs-on: ubuntu-latest
     steps:
