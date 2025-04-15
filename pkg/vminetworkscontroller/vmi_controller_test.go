@@ -569,7 +569,7 @@ func dummyNADWrongFormat(nadName string) *nadv1.NetworkAttachmentDefinition {
 
 func ipamClaimsCleaner(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaim {
 	for i := range ipamClaims {
-		ipamClaims[i].ObjectMeta.ResourceVersion = ""
+		ipamClaims[i].ResourceVersion = ""
 	}
 	return ipamClaims
 }
@@ -581,7 +581,7 @@ func decorateVMWithUID(uid string, vm *virtv1.VirtualMachine) *virtv1.VirtualMac
 func dummyMarkedForDeletionVMI(nadName string) *virtv1.VirtualMachineInstance {
 	vmi := dummyVMI(dummyVMISpec(nadName))
 	vmi.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	vmi.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+	vmi.Finalizers = []string{metav1.FinalizerDeleteDependents}
 
 	return vmi
 }
@@ -589,10 +589,10 @@ func dummyMarkedForDeletionVMI(nadName string) *virtv1.VirtualMachineInstance {
 func dummyMarkedForDeletionVMIWithActivePods(nadName string) *virtv1.VirtualMachineInstance {
 	vmi := dummyVMI(dummyVMISpec(nadName))
 	vmi.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	vmi.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+	vmi.Finalizers = []string{metav1.FinalizerDeleteDependents}
 
 	vmi.Status.ActivePods = map[apitypes.UID]string{"podUID": "dummyNodeName"}
-	vmi.UID = apitypes.UID(dummyUID)
+	vmi.UID = dummyUID
 
 	return vmi
 }
@@ -600,7 +600,7 @@ func dummyMarkedForDeletionVMIWithActivePods(nadName string) *virtv1.VirtualMach
 func dummyMarkedForDeletionVM(nadName string) *virtv1.VirtualMachine {
 	vm := dummyVM(dummyVMISpec(nadName))
 	vm.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	vm.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+	vm.Finalizers = []string{metav1.FinalizerDeleteDependents}
 
 	return vm
 }

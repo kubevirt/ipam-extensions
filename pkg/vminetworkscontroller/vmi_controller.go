@@ -55,7 +55,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 
 	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	err := r.Client.Get(contextWithTimeout, request.NamespacedName, vmi)
+	err := r.Get(contextWithTimeout, request.NamespacedName, vmi)
 	if apierrors.IsNotFound(err) {
 		vmi = nil
 	} else if err != nil {
@@ -99,7 +99,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 			},
 		}
 
-		if err := r.Client.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
+		if err := r.Create(ctx, ipamClaim, &client.CreateOptions{}); err != nil {
 			if apierrors.IsAlreadyExists(err) {
 				claimKey := apitypes.NamespacedName{
 					Namespace: vmi.Namespace,
@@ -107,7 +107,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 				}
 
 				existingIPAMClaim := &ipamclaimsapi.IPAMClaim{}
-				if err := r.Client.Get(ctx, claimKey, existingIPAMClaim); err != nil {
+				if err := r.Get(ctx, claimKey, existingIPAMClaim); err != nil {
 					return controllerruntime.Result{}, fmt.Errorf("let us be on the safe side and retry later")
 				}
 
@@ -185,7 +185,7 @@ func (r *VirtualMachineInstanceReconciler) ensureVMINetworksWithSecondaryUDN(ctx
 	contextWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	nad := &nadv1.NetworkAttachmentDefinition{}
-	if err := r.Client.Get(
+	if err := r.Get(
 		contextWithTimeout,
 		apitypes.NamespacedName{Namespace: namespace, Name: nadName},
 		nad,

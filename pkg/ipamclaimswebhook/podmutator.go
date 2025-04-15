@@ -49,7 +49,7 @@ import (
 // IPAMClaimsValet annotates Pods
 type IPAMClaimsValet struct {
 	client.Client
-	decoder *admission.Decoder
+	decoder admission.Decoder
 }
 
 func NewIPAMClaimsValet(manager manager.Manager) *IPAMClaimsValet {

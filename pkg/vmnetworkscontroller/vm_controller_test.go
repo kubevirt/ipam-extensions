@@ -165,7 +165,7 @@ var _ = Describe("VM IPAM controller", Serial, func() {
 func dummyMarkedForDeletionVM(nadName string) *virtv1.VirtualMachine {
 	vm := dummyVM(nadName)
 	vm.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	vm.ObjectMeta.Finalizers = []string{metav1.FinalizerDeleteDependents}
+	vm.Finalizers = []string{metav1.FinalizerDeleteDependents}
 
 	return vm
 }
@@ -215,7 +215,7 @@ func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 
 func ipamClaimsCleaner(ipamClaims ...ipamclaimsapi.IPAMClaim) []ipamclaimsapi.IPAMClaim {
 	for i := range ipamClaims {
-		ipamClaims[i].ObjectMeta.ResourceVersion = ""
+		ipamClaims[i].ResourceVersion = ""
 	}
 	return ipamClaims
 }
