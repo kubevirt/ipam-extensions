@@ -1,0 +1,36 @@
+# Adds namespace to all resources.
+namespace: openshift-kubevirt-ipam-controller-system
+
+labels:
+- includeSelectors: true
+  pairs:
+    app: ipam-virt-workloads
+
+resources:
+- ../rbac
+- ../manager
+- ../webhook
+
+patches:
+- path: manager_webhook_patch.yaml
+- path: webhookcainjection_patch.yaml
+- patch: |-
+    - op: add
+      path: /webhooks/0/objectSelector
+      value:
+        matchLabels:
+          kubevirt.io: virt-launcher
+  target:
+    kind: MutatingWebhookConfiguration
+    group: admissionregistration.k8s.io
+    version: v1
+    name: mutating-webhook-configuration
+- patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        service.beta.openshift.io/serving-cert-secret-name: webhook-service
+  target:
+    kind: Service
+    version: v1
+    name: webhook-service
