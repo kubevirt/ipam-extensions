@@ -88,6 +88,7 @@ spec:
           requests:
             cpu: 10m
             memory: 128Mi
+        terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: system-cluster-critical
       serviceAccountName: manager
       terminationGracePeriodSeconds: 10
