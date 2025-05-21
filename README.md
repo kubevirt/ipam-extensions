@@ -28,6 +28,7 @@ that implements this IPAM multi-network standard.
 - docker version 17.03+.
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
+- [cert-manager](https://cert-manager.io) installed
 
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `IMG`:**
@@ -77,6 +78,9 @@ Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project
 ```sh
 kubectl apply -f https://raw.githubusercontent.com/kubevirt/ipam-extensions/main/dist/install.yaml
 ```
+
+> **NOTE**: The project require cert-manager to be installed in the cluster in order to operate.
+> Installing cert-manager instructions can be found at https://cert-manager.io/docs/installation/
 
 ## Requesting persistent IPs for KubeVirt VMs
 To opt-in to this feature, the network must allow persistent IPs; for that,
