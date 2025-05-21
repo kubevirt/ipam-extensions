@@ -73,6 +73,10 @@ function sync() {
     # Generate the manifest with the "sha256" to force kubernetes to reload the image
     sha=$(skopeo inspect --tls-verify=false docker://$img:$tag |jq -r .Digest)
     IMG=$img@$sha make deploy
+
+    # Ensure the project network-polices are valid by installing an additional deny-all network-policy affecting the project namespace
+    ./hack/install-deny-all-net-pol.sh
+
     ${KUBECTL} rollout status -w -n kubevirt-ipam-controller-system deployment kubevirt-ipam-controller-manager --timeout 2m
 }
 

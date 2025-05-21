@@ -18,6 +18,7 @@ resources:
 - ../manager
 - ../webhook
 - ../certmanager
+- ../networkpolicy
 
 patches:
 - path: manager_webhook_patch.yaml
