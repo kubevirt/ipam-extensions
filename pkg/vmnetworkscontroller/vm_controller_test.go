@@ -2,7 +2,6 @@ package vmnetworkscontroller_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -229,7 +228,7 @@ func dummyIPAMClaimWithFinalizer(namespace, vmName string) *ipamclaimsapi.IPAMCl
 func dummyIPAMClaimmWithoutFinalizer(namespace, vmName string) *ipamclaimsapi.IPAMClaim {
 	return &ipamclaimsapi.IPAMClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+			Name:      claims.ComposeKey(vmName, "randomnet"),
 			Namespace: namespace,
 			Labels:    claims.OwnedByVMLabel(vmName),
 			OwnerReferences: []metav1.OwnerReference{{
