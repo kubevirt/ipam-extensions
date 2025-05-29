@@ -318,7 +318,7 @@ metadata:
 spec:
   ingress:
   - ports:
-    - port: 9443
+    - port: webhook-server
       protocol: TCP
   podSelector:
     matchLabels:

@@ -12,4 +12,4 @@ spec:
   ingress:
   - ports:
     - protocol: TCP
-      port: 9443
+      port: webhook-server
