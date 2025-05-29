@@ -313,58 +313,12 @@ kind: NetworkPolicy
 metadata:
   labels:
     app: ipam-virt-workloads
-  name: kubevirt-ipam-controller-allow-egress-to-api-server
-  namespace: kubevirt-ipam-controller-system
-spec:
-  egress:
-  - ports:
-    - port: 6443
-      protocol: TCP
-  podSelector:
-    matchLabels:
-      app: ipam-virt-workloads
-  policyTypes:
-  - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  labels:
-    app: ipam-virt-workloads
-  name: kubevirt-ipam-controller-allow-egress-to-dns
-  namespace: kubevirt-ipam-controller-system
-spec:
-  egress:
-  - ports:
-    - port: dns-tcp
-      protocol: TCP
-    - port: dns
-      protocol: UDP
-    to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: kube-system
-      podSelector:
-        matchLabels:
-          app: ipam-virt-workloads
-          k8s-app: kube-dns
-  podSelector:
-    matchLabels:
-      app: ipam-virt-workloads
-  policyTypes:
-  - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  labels:
-    app: ipam-virt-workloads
   name: kubevirt-ipam-controller-allow-ingress-to-ipam-ext-webhook
   namespace: kubevirt-ipam-controller-system
 spec:
   ingress:
   - ports:
-    - port: 9443
+    - port: webhook-server
       protocol: TCP
   podSelector:
     matchLabels:

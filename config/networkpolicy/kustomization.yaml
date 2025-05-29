@@ -1,6 +1,4 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- allow-egress-dns.yaml
-- allow-egress-kube-apiserver.yaml
-- allow-ingress-to-service.yaml
+- allow-ingress-to-webhook.yaml

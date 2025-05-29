@@ -2,14 +2,14 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-to-api-server
+  name: allow-ingress-to-ipam-ext-webhook
 spec:
   podSelector:
     matchLabels:
       app: ipam-virt-workloads
   policyTypes:
-  - Egress
-  egress:
+    - Ingress
+  ingress:
   - ports:
     - protocol: TCP
-      port: 6443
+      port: webhook-server
