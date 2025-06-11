@@ -15,18 +15,18 @@
 # limitations under the License.
 #
 
-# This script install deny-all NetworkPolicy that affects kubevirt-ipam-controller namespace.
+# This script install NetworkPolicy that affects the project namespace.
+# The network-policy blocks egress/ingress traffic in the project namespace
+# except for egress to cluster API and DNS.
 
 readonly ns="$(${KUBECTL} get pod -l app=ipam-virt-workloads -A -o=custom-columns=NS:.metadata.namespace --no-headers | head -1)"
 [[ -z "${ns}" ]] && echo "FATAL: kubevirt-ipam-controller pods not found. Make sure kubevirt-ipam-controller is installed" && exit 1
 
-readonly np_name="deny-all"
-${KUBECTL} -n "${ns}" get networkpolicy "${np_name}" &> /dev/null ||
-  cat <<EOF | ${KUBECTL} -n "${ns}" apply -f -
+cat <<EOF | ${KUBECTL} -n "${ns}" apply -f -
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ${np_name}
+  name: default-deny-all
 spec:
   podSelector: {}
   policyTypes:
@@ -34,4 +34,43 @@ spec:
   - Egress
   ingress: []
   egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-api-server
+spec:
+  podSelector:
+    matchLabels:
+      app: ipam-virt-workloads
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
+    - protocol: TCP
+      port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-dns
+spec:
+  podSelector:
+    matchLabels:
+      app: ipam-virt-workloads
+  policyTypes:
+  - Egress
+  egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+      ports:
+        - protocol: TCP
+          port: dns-tcp
+        - protocol: UDP
+          port: dns
 EOF
