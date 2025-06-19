@@ -32,6 +32,8 @@ import (
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
 type testConfig struct {
@@ -146,8 +148,8 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
-					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-					Value:     "vm1.podnet",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value:     "[{\"name\":\"default\",\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
 				{
 					Operation: "replace",
@@ -156,7 +158,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			}),
 		}),
-		Entry("vm launcher pod with with primary user defined network defined "+
+		Entry("vm launcher pod with primary user defined network defined "+
 			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName),
@@ -171,8 +173,33 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
-					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-					Value:     "vm1.podnet",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value:     "[{\"name\":\"default\",\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
+				},
+			}),
+		}),
+		Entry("vm launcher pod with requested IPs for primary user defined network defined "+
+			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10/24", "fd20:1234::200/64")),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyPrimaryNetworkNAD(nadName),
+			},
+			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
+			},
+			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value: `[{
+	"name":"default",
+	"ips":["192.168.1.10/24","fd20:1234::200/64"],
+	"mac":"02:03:04:05:06:07",
+	"ipam-claim-reference":"vm1.podnet"
+}]`,
 				},
 			}),
 		}),
@@ -281,18 +308,34 @@ func dummyVM(nadName string) *virtv1.VirtualMachine {
 	}
 }
 
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
-	return &virtv1.VirtualMachineInstance{
+func dummyVMI(nadName string, opts ...VMCreationOptions) *virtv1.VirtualMachineInstance {
+	vmi := &virtv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
 			Namespace: "ns1",
 		},
 		Spec: dummyVMISpec(nadName),
 	}
+
+	for _, opt := range opts {
+		opt(vmi)
+	}
+
+	return vmi
 }
 
 func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 	return virtv1.VirtualMachineInstanceSpec{
+		Domain: virtv1.DomainSpec{
+			Devices: virtv1.Devices{
+				Interfaces: []virtv1.Interface{
+					{
+						Name:       "podnet",
+						MacAddress: "02:03:04:05:06:07",
+					},
+				},
+			},
+		},
 		Networks: []virtv1.Network{
 			{
 				Name:          "podnet",
@@ -372,5 +415,30 @@ func pod(nadName string, annotations map[string]string) *corev1.Pod {
 			Namespace:   "ns1",
 			Annotations: baseAnnotations,
 		},
+	}
+}
+
+type VMCreationOptions func(*virtv1.VirtualMachineInstance)
+
+func WithIPRequests(logicalNetworkName string, ips ...string) VMCreationOptions {
+	return func(vm *virtv1.VirtualMachineInstance) {
+		currentLogicalNetsAddrs := map[string][]string{}
+		rawCurrentLogicalNetsAddrs, isAnnotationPresent := vm.Annotations[config.IPRequestsAnnotation]
+		if !isAnnotationPresent {
+			currentLogicalNetsAddrs = map[string][]string{logicalNetworkName: ips}
+		} else {
+			if err := json.Unmarshal([]byte(rawCurrentLogicalNetsAddrs), &currentLogicalNetsAddrs); err != nil {
+				return
+			}
+			currentLogicalNetsAddrs[logicalNetworkName] = ips
+		}
+
+		rawVMAddrsRequest, err := json.Marshal(currentLogicalNetsAddrs)
+		if err != nil {
+			//return nil
+		}
+		if vm.Annotations == nil {
+			vm.Annotations = map[string]string{"network.kubevirt.io/addresses": string(rawVMAddrsRequest)}
+		}
 	}
 }
