@@ -8,7 +8,9 @@ import (
 type NetworkRole string
 
 const (
-	NetworkRolePrimary NetworkRole = "primary"
+	NetworkRolePrimary         NetworkRole = "primary"
+	IPRequestsAnnotation       string      = "network.kubevirt.io/addresses"
+	MultusDefaultNetAnnotation string      = "v1.multus-cni.io/default-network"
 )
 
 const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/primary-udn-ipamclaim"
