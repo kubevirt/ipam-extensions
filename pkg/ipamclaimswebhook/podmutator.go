@@ -117,31 +117,48 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		)
 	}
 
-	primaryUDNInterface, err := findPrimaryUDNLogicalNetworkAttachment(ctx, a.Client, vmi)
+	primaryNetwork, err := primaryNetworkConfig(a.Client, ctx, vmi)
 	if err != nil {
-		return admission.Errored(http.StatusInternalServerError,
-			fmt.Errorf("failed looking for primary user defined IPAMClaim name: %v", err))
+		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	if primaryUDNInterface != nil {
-		if newPod == nil {
-			newPod = pod.DeepCopy()
+	if primaryNetwork != nil {
+		log.Info(
+			"primary network attachment found",
+			"network", primaryNetwork.Name,
+		)
+		primaryUDNInterface, err := findPrimaryUDNInterface(ctx, vmi, primaryNetwork)
+		if err != nil {
+			return admission.Errored(http.StatusInternalServerError,
+				fmt.Errorf("failed looking for primary user defined IPAMClaim name: %v", err))
 		}
 
-		primaryUDNClaimName := claims.ComposeKey(vmi.Name, primaryUDNInterface.Name)
-		updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(newPod, primaryUDNClaimName)
+		if primaryUDNInterface != nil {
+			if newPod == nil {
+				newPod = pod.DeepCopy()
+			}
 
-		primaryUDNIPRequests := ips.VmiInterfaceIPRequests(vmi, primaryUDNInterface.Name)
+			primaryUDNIPRequests, err := ips.VmiInterfaceIPRequests(vmi, primaryUDNInterface.Name, primaryNetwork)
+			if err != nil {
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
 
-		primaryUDNNetworkSelectionElement := multusDefaultNetworkAnnotation(
-			a.defaultNetNADNamespace,
-			primaryUDNInterface.MacAddress,
-			primaryUDNClaimName,
-			primaryUDNIPRequests...,
-		)
+			primaryUDNNetworkSelectionElement := multusDefaultNetworkAnnotation(
+				a.defaultNetNADNamespace,
+				primaryUDNInterface.MacAddress,
+				claims.ComposeKey(vmi.Name, primaryUDNInterface.Name),
+				primaryUDNIPRequests...,
+			)
 
-		if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
-			return admission.Errored(http.StatusInternalServerError, err)
+			// TODO: once we have deprecated the ipam-claim dedicated OVN-K annotation, we can drop the if below
+			//if len(primaryUDNIPRequests) > 0 {
+			if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
+			//}
+
+			// Set the legacy OVN primary network IPAM claim annotation for backwards compatibility
+			updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(newPod, claims.ComposeKey(vmi.Name, primaryUDNInterface.Name))
 		}
 	}
 
@@ -192,10 +209,6 @@ func updatePodSelectionElements(pod *corev1.Pod, networks []*v1.NetworkSelection
 	return nil
 }
 
-func updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(pod *corev1.Pod, ipamClaimName string) {
-	pod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] = ipamClaimName
-}
-
 func definePodMultusDefaultNetworkAnnotation(pod *corev1.Pod, networkConfig *v1.NetworkSelectionElement) error {
 	rawNetData, err := json.Marshal([]*v1.NetworkSelectionElement{networkConfig})
 	if err != nil {
@@ -203,6 +216,10 @@ func definePodMultusDefaultNetworkAnnotation(pod *corev1.Pod, networkConfig *v1.
 	}
 	pod.Annotations[config.MultusDefaultNetAnnotation] = string(rawNetData)
 	return nil
+}
+
+func updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(pod *corev1.Pod, ipamClaimName string) {
+	pod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] = ipamClaimName
 }
 
 func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
@@ -275,30 +292,16 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
 	return hasChangedNetworkSelectionElements, nil
 }
 
-func findPrimaryUDNLogicalNetworkAttachment(ctx context.Context,
-	cli client.Client, vmi *virtv1.VirtualMachineInstance) (*virtv1.Interface, error) {
+func findPrimaryUDNInterface(
+	ctx context.Context,
+	vmi *virtv1.VirtualMachineInstance,
+	pluginConfig *config.RelevantConfig,
+) (*virtv1.Interface, error) {
 	log := logf.FromContext(ctx)
-	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, vmi.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	if primaryNetworkNAD == nil {
-		return nil, nil
-	}
-	pluginConfig, err := config.NewConfig(primaryNetworkNAD.Spec.Config)
-	if err != nil {
-		return nil, err
-	}
 
 	if !pluginConfig.AllowPersistentIPs {
 		return nil, nil
 	}
-
-	log.Info(
-		"will request primary network persistent IPs",
-		"NAD", client.ObjectKeyFromObject(primaryNetworkNAD),
-		"network", pluginConfig.Name,
-	)
 
 	podNetwork := vmiPodNetwork(vmi)
 	if podNetwork == nil {
@@ -311,6 +314,52 @@ func findPrimaryUDNLogicalNetworkAttachment(ctx context.Context,
 	}
 
 	return vmiNetworkInterface(vmi, *podNetwork), nil
+}
+
+func primaryNetworkConfig(
+	cli client.Client,
+	ctx context.Context,
+	vmi *virtv1.VirtualMachineInstance,
+) (*config.RelevantConfig, error) {
+	log := logf.FromContext(ctx)
+
+	log.Info(
+		"Looking for primary network config",
+		"vmi",
+		client.ObjectKeyFromObject(vmi),
+	)
+
+	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, vmi.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	if primaryNetworkNAD == nil {
+		log.Info(
+			"Did not find primary network config",
+			"namespace", vmi.Namespace,
+		)
+		return nil, nil
+	}
+
+	log.Info(
+		"Found primary network NAD",
+		"NAD",
+		client.ObjectKeyFromObject(primaryNetworkNAD),
+		"NADs contents",
+		primaryNetworkNAD.Spec.Config,
+	)
+
+	pluginConfig, err := config.NewConfig(primaryNetworkNAD.Spec.Config)
+	log.Info(
+		"plugin config",
+		"namespace", vmi.Namespace,
+		"plugin", pluginConfig,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return pluginConfig, nil
 }
 
 // returns the KubeVirt VM pod network
