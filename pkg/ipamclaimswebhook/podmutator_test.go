@@ -194,7 +194,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 		Entry("vm launcher pod with requested IPs for primary user defined network defined "+
 			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
 			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10/16", "fd20:1234::200/64")),
+			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
 				dummyPrimaryNetworkNAD(nadName),
 			},
@@ -388,7 +388,13 @@ func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
 }
 
 func dummyPrimaryNetworkNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
-	return dummyNADWithConfig(nadName+"primary", `{"name": "primarynet", "role": "primary", "allowPersistentIPs": true}`)
+	return dummyNADWithConfig(nadName+"primary", `
+{
+	"name": "primarynet",
+	"role": "primary",
+	"allowPersistentIPs": true,
+	"subnets": "192.168.0.0/16,fd12:1234::123/64"
+}`)
 }
 func dummyNADWithoutPersistentIPs(nadName string) *nadv1.NetworkAttachmentDefinition {
 	return dummyNADWithConfig(nadName, `{"name": "goodnet"}`)
