@@ -41,6 +41,7 @@ import (
 
 	"github.com/kubevirt/ipam-extensions/pkg/claims"
 	"github.com/kubevirt/ipam-extensions/pkg/config"
+	"github.com/kubevirt/ipam-extensions/pkg/ips"
 	"github.com/kubevirt/ipam-extensions/pkg/udn"
 )
 
@@ -125,28 +126,42 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		)
 	}
 
-	primaryUDNInterface, err := findPrimaryUDNLogicalNetworkAttachment(ctx, a.Client, vmi)
+	primaryNetwork, err := primaryNetworkConfig(a.Client, ctx, vmi)
 	if err != nil {
-		return admission.Errored(http.StatusInternalServerError,
-			fmt.Errorf("failed looking for primary user defined IPAMClaim name: %v", err))
+		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	if primaryUDNInterface != nil {
-		if newPod == nil {
-			newPod = pod.DeepCopy()
+	if primaryNetwork != nil {
+		log.Info(
+			"primary network attachment found",
+			"network", primaryNetwork.Name,
+		)
+		primaryUDNInterface, err := findPrimaryUDNLogicalNetworkAttachment(ctx, vmi, primaryNetwork)
+		if err != nil {
+			return admission.Errored(http.StatusInternalServerError,
+				fmt.Errorf("failed looking for primary user defined IPAMClaim name: %v", err))
 		}
 
-		primaryUDNIPRequests := primaryNetworkIPRequests(vmi, primaryUDNInterface.Name)
+		if primaryUDNInterface != nil {
+			if newPod == nil {
+				newPod = pod.DeepCopy()
+			}
 
-		primaryUDNNetworkSelectionElement := multusDefaultNetworkAnnotation(
-			a.defaultNetNADNamespace,
-			primaryUDNInterface.MacAddress,
-			claims.ComposeKey(vmi.Name, primaryUDNInterface.Name),
-			primaryUDNIPRequests...,
-		)
+			primaryUDNIPRequests, err := primaryNetworkIPRequests(vmi, primaryUDNInterface.Name, primaryNetwork)
+			if err != nil {
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
 
-		if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
-			return admission.Errored(http.StatusInternalServerError, err)
+			primaryUDNNetworkSelectionElement := multusDefaultNetworkAnnotation(
+				a.defaultNetNADNamespace,
+				primaryUDNInterface.MacAddress,
+				claims.ComposeKey(vmi.Name, primaryUDNInterface.Name),
+				primaryUDNIPRequests...,
+			)
+
+			if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
 		}
 	}
 
@@ -276,30 +291,16 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
 	return hasChangedNetworkSelectionElements, nil
 }
 
-func findPrimaryUDNLogicalNetworkAttachment(ctx context.Context,
-	cli client.Client, vmi *virtv1.VirtualMachineInstance) (*virtv1.Interface, error) {
+func findPrimaryUDNLogicalNetworkAttachment(
+	ctx context.Context,
+	vmi *virtv1.VirtualMachineInstance,
+	pluginConfig *config.RelevantConfig,
+) (*virtv1.Interface, error) {
 	log := logf.FromContext(ctx)
-	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, vmi.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	if primaryNetworkNAD == nil {
-		return nil, nil
-	}
-	pluginConfig, err := config.NewConfig(primaryNetworkNAD.Spec.Config)
-	if err != nil {
-		return nil, err
-	}
 
-	if !pluginConfig.AllowPersistentIPs {
-		return nil, nil
-	}
-
-	log.Info(
-		"will request primary network persistent IPs",
-		"NAD", client.ObjectKeyFromObject(primaryNetworkNAD),
-		"network", pluginConfig.Name,
-	)
+	//if !pluginConfig.AllowPersistentIPs {
+	//	return nil, nil
+	//}
 
 	podNetwork := vmiPodNetwork(vmi)
 	if podNetwork == nil {
@@ -312,6 +313,52 @@ func findPrimaryUDNLogicalNetworkAttachment(ctx context.Context,
 	}
 
 	return vmiPodPrimaryNetworkInterface(vmi, *podNetwork), nil
+}
+
+func primaryNetworkConfig(
+	cli client.Client,
+	ctx context.Context,
+	vmi *virtv1.VirtualMachineInstance,
+) (*config.RelevantConfig, error) {
+	log := logf.FromContext(ctx)
+
+	log.Info(
+		"Looking for primary network config",
+		"vmi",
+		client.ObjectKeyFromObject(vmi),
+	)
+
+	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, vmi.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	if primaryNetworkNAD == nil {
+		log.Info(
+			"Did not find primary network config",
+			"namespace", vmi.Namespace,
+		)
+		return nil, nil
+	}
+
+	log.Info(
+		"Found primary network NAD",
+		"NAD",
+		client.ObjectKeyFromObject(primaryNetworkNAD),
+		"NADs contents",
+		primaryNetworkNAD.Spec.Config,
+	)
+
+	pluginConfig, err := config.NewConfig(primaryNetworkNAD.Spec.Config)
+	log.Info(
+		"plugin config",
+		"namespace", vmi.Namespace,
+		"plugin", pluginConfig,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return pluginConfig, nil
 }
 
 func runningVMForPod(pod *corev1.Pod, vmName string, cli client.Client) (*virtv1.VirtualMachineInstance, error) {
@@ -358,12 +405,56 @@ func multusDefaultNetworkAnnotation(
 	}
 }
 
-func primaryNetworkIPRequests(vmi *virtv1.VirtualMachineInstance, podNetworkName string) []string {
+func primaryNetworkIPRequests(
+	vmi *virtv1.VirtualMachineInstance,
+	podNetworkName string,
+	primaryNet *config.RelevantConfig,
+) ([]string, error) {
 	var addrs map[string][]string
-	ipRequests := vmi.Annotations[config.IPRequestsAnnotation]
+	ipRequests, doesVMHaveIPRequests := vmi.Annotations[config.IPRequestsAnnotation]
+	if !doesVMHaveIPRequests {
+		return nil, nil
+	}
 	if err := json.Unmarshal([]byte(ipRequests), &addrs); err != nil {
-		return nil
+		return nil, err
 	}
 
-	return addrs[podNetworkName]
+	// Separate subnets by IP family
+	ipv4Subnets, ipv6Subnets, err := ips.SeparateSubnetsByFamily(primaryNet.Subnets)
+	if err != nil {
+		return nil, err
+	}
+
+	primaryNetIPs := addrs[podNetworkName]
+	result := make([]string, 0, len(primaryNetIPs))
+
+	for _, ip := range primaryNetIPs {
+		var targetSubnet string
+
+		if ips.IsIPv4(ip) {
+			// Find first available IPv4 subnet
+			if len(ipv4Subnets) == 0 {
+				return nil, fmt.Errorf("no IPv4 subnet configured for IPv4 IP request: %s", ip)
+			}
+			targetSubnet = ipv4Subnets[0]
+		} else if ips.IsIPv6(ip) {
+			// Find first available IPv6 subnet
+			if len(ipv6Subnets) == 0 {
+				return nil, fmt.Errorf("no IPv6 subnet configured for IPv6 IP request: %s", ip)
+			}
+			targetSubnet = ipv6Subnets[0]
+		} else {
+			return nil, fmt.Errorf("invalid IP address format: %s", ip)
+		}
+
+		// Extract netmask from subnet
+		splitSubnet := strings.Split(targetSubnet, "/")
+		if len(splitSubnet) != 2 {
+			return nil, fmt.Errorf("invalid subnet format: %s", targetSubnet)
+		}
+		subnetNetmask := splitSubnet[1]
+		result = append(result, fmt.Sprintf("%s/%s", ip, subnetNetmask))
+	}
+
+	return result, nil
 }
