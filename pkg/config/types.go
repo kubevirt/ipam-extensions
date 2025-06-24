@@ -19,6 +19,7 @@ type RelevantConfig struct {
 	Name               string      `json:"name"`
 	AllowPersistentIPs bool        `json:"allowPersistentIPs,omitempty"`
 	Role               NetworkRole `json:"role,omitempty"`
+	Subnets            string      `json:"subnets,omitempty"`
 }
 
 func NewConfig(nadSpec string) (*RelevantConfig, error) {
