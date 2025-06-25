@@ -72,6 +72,8 @@ jobs:
       run: make cluster-sync
 
     - name: Run e2e tests
+      env:
+        E2E_TEST_ARGS: --procs=1
       run: make test-e2e
 
     - uses: actions/upload-artifact@v4  # upload test results
