@@ -148,6 +148,11 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
+				{
+					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
 					Value:     "[{\"name\":\"default\",\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
@@ -170,7 +175,12 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				Allowed:   true,
 				PatchType: &patchType,
 			},
-			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
@@ -190,7 +200,12 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				Allowed:   true,
 				PatchType: &patchType,
 			},
-			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",

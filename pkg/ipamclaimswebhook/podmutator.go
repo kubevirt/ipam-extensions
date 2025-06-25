@@ -162,6 +162,9 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 			if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
 				return admission.Errored(http.StatusInternalServerError, err)
 			}
+
+			// Set the legacy OVN primary network IPAM claim annotation for backwards compatibility
+			updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(newPod, claims.ComposeKey(vmi.Name, primaryUDNInterface.Name))
 		}
 	}
 
@@ -219,6 +222,10 @@ func definePodMultusDefaultNetworkAnnotation(pod *corev1.Pod, networkConfig *v1.
 	}
 	pod.Annotations[config.MultusDefaultNetAnnotation] = string(rawNetData)
 	return nil
+}
+
+func updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(pod *corev1.Pod, ipamClaimName string) {
+	pod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] = ipamClaimName
 }
 
 func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
