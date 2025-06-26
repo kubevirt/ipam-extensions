@@ -54,14 +54,26 @@ jobs:
 
     - name: Free up disk space
       run: |
+        df -h
         sudo rm -rf /usr/local/lib/android/sdk
         sudo apt-get update
         sudo eatmydata apt-get purge --auto-remove -y \
           azure-cli aspnetcore-* dotnet-* ghc-* firefox \
           google-chrome-stable \
           llvm-* microsoft-edge-stable mono-* \
-          mysql-server-core-* php-* php7* \
+          msbuild mysql-server-core-* php-* php7* \
           powershell temurin-* zulu-*
+        # clean unused packages
+        sudo apt-get autoclean
+        sudo apt-get autoremove -y
+        # clean apt cache
+        sudo apt-get clean
+        sudo docker system prune -af --volumes
+        df -h
+        sudo swapon --show
+        sudo swapoff -a
+        sudo rm -f /mnt/swapfile
+        df -h
 
     - name: Start cluster
       env:
