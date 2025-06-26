@@ -32,6 +32,8 @@ import (
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
 type testConfig struct {
@@ -150,13 +152,18 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 					Value:     "vm1.podnet",
 				},
 				{
+					Operation: "add",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value:     "[{\"name\":\"default\",\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
+				},
+				{
 					Operation: "replace",
 					Path:      "/metadata/annotations/k8s.v1.cni.cncf.io~1networks",
 					Value:     "[{\"name\":\"supadupanet\",\"namespace\":\"ns1\",\"ipam-claim-reference\":\"vm1.randomnet\"}]",
 				},
 			}),
 		}),
-		Entry("vm launcher pod with with primary user defined network defined "+
+		Entry("vm launcher pod with primary user defined network defined "+
 			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName),
@@ -168,11 +175,42 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				Allowed:   true,
 				PatchType: &patchType,
 			},
-			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
 					Value:     "vm1.podnet",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value:     "[{\"name\":\"default\",\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
+				},
+			}),
+		}),
+		Entry("vm launcher pod with requested IPs for primary user defined network defined "+
+			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyPrimaryNetworkNAD(nadName),
+			},
+			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
+			},
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value: `[{"name":"default","ips":["192.168.1.10/16","fd20:1234::200/64"],` +
+						`"mac":"02:03:04:05:06:07","ipam-claim-reference":"vm1.podnet"}]`,
 				},
 			}),
 		}),
@@ -264,7 +302,243 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			},
 		}),
+		Entry("launcher pod with existing default-network multus annotation pointing to the non-udn interface", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyPrimaryNetworkNAD(nadName),
+			},
+			inputPod: dummyPodForVMWithAnnotation("" /*without network selection element*/, vmName,
+				map[string]string{config.MultusDefaultNetAnnotation: "[{\"name\":\"not-podnet\"}]"}),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Message: "multus default network is only allowed on the primary UDN interface (podnet), " +
+						"but was requested on interface not-podnet",
+					Reason: metav1.StatusReasonForbidden,
+					Code:   http.StatusForbidden,
+				},
+			},
+		}),
 	)
+})
+
+var _ = Describe("primaryNetworkIPRequests", func() {
+	var (
+		vmi        *virtv1.VirtualMachineInstance
+		primaryNet *config.RelevantConfig
+	)
+
+	BeforeEach(func() {
+		vmi = &virtv1.VirtualMachineInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-vm",
+				Namespace: "default",
+			},
+		}
+
+		primaryNet = &config.RelevantConfig{
+			Name:               "primarynet",
+			AllowPersistentIPs: true,
+			Role:               config.NetworkRolePrimary,
+			Subnets:            "192.168.0.0/16,fd12:1234::/64",
+		}
+	})
+
+	When("VMI has no IP requests annotation", func() {
+		It("should return nil when no IP requests are present", func() {
+			result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+		})
+	})
+
+	When("VMI has IP requests annotation", func() {
+		Context("with valid IPv4 and IPv6 addresses", func() {
+			BeforeEach(func() {
+				ipRequests := map[string][]string{
+					"podnet": {"192.168.1.10", "fd20:1234::200"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+			})
+
+			It("should return formatted IP addresses with subnet masks", func() {
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(ConsistOf("192.168.1.10/16", "fd20:1234::200/64"))
+			})
+		})
+
+		Context("with only IPv4 addresses", func() {
+			BeforeEach(func() {
+				ipRequests := map[string][]string{
+					"podnet": {"192.168.1.10", "192.168.1.20"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+			})
+
+			It("should return formatted IPv4 addresses with correct subnet masks", func() {
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(ConsistOf("192.168.1.10/16", "192.168.1.20/16"))
+			})
+		})
+
+		Context("with only IPv6 addresses", func() {
+			BeforeEach(func() {
+				primaryNet.Subnets = "fd12:1234::/64"
+				ipRequests := map[string][]string{
+					"podnet": {"fd20:1234::200", "fd20:1234::300"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+			})
+
+			It("should return formatted IPv6 addresses with correct subnet masks", func() {
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(ConsistOf("fd20:1234::200/64", "fd20:1234::300/64"))
+			})
+		})
+
+		Context("with different network names", func() {
+			BeforeEach(func() {
+				ipRequests := map[string][]string{
+					"podnet":   {"192.168.1.10"},
+					"othernet": {"192.168.2.10"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+			})
+
+			It("should return IPs only for the specified network", func() {
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(ConsistOf("192.168.1.10/16"))
+			})
+
+			It("should return nil for non-existent network", func() {
+				result, err := primaryNetworkIPRequests(vmi, "nonexistent", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(BeEmpty())
+			})
+		})
+
+		Context("with error scenarios", func() {
+			It("should return error for invalid JSON in annotation", func() {
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: "invalid json",
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).To(HaveOccurred())
+				Expect(result).To(BeNil())
+			})
+
+			It("should return error for IPv4 address when no IPv4 subnets configured", func() {
+				primaryNet.Subnets = "fd12:1234::/64" // Only IPv6
+				ipRequests := map[string][]string{
+					"podnet": {"192.168.1.10"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).To(MatchError(ContainSubstring("no IPv4 subnet configured")))
+				Expect(result).To(BeNil())
+			})
+
+			It("should return error for IPv6 address when no IPv6 subnets configured", func() {
+				primaryNet.Subnets = "192.168.0.0/16" // Only IPv4
+				ipRequests := map[string][]string{
+					"podnet": {"fd20:1234::200"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).To(MatchError(ContainSubstring("no IPv6 subnet configured")))
+				Expect(result).To(BeNil())
+			})
+
+			It("should return error for invalid IP address format", func() {
+				ipRequests := map[string][]string{
+					"podnet": {"not.an.ip.address"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).To(MatchError(ContainSubstring("invalid IP address format")))
+				Expect(result).To(BeNil())
+			})
+
+			It("should return error for invalid subnet format", func() {
+				primaryNet.Subnets = "192.168.0.0" // Missing CIDR notation
+				ipRequests := map[string][]string{
+					"podnet": {"192.168.1.10"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).To(MatchError(ContainSubstring("invalid subnet format")))
+				Expect(result).To(BeNil())
+			})
+		})
+
+		Context("with multiple subnets of same family", func() {
+			BeforeEach(func() {
+				primaryNet.Subnets = "192.168.0.0/16,10.0.0.0/8,fd12:1234::/64,fd34:5678::/48"
+			})
+
+			It("should use the first IPv4 subnet for IPv4 addresses", func() {
+				ipRequests := map[string][]string{
+					"podnet": {"192.168.1.10"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(ConsistOf("192.168.1.10/16"))
+			})
+
+			It("should use the first IPv6 subnet for IPv6 addresses", func() {
+				ipRequests := map[string][]string{
+					"podnet": {"fd20:1234::200"},
+				}
+				rawRequests, _ := json.Marshal(ipRequests)
+				vmi.Annotations = map[string]string{
+					config.IPRequestsAnnotation: string(rawRequests),
+				}
+
+				result, err := primaryNetworkIPRequests(vmi, "podnet", primaryNet)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(ConsistOf("fd20:1234::200/64"))
+			})
+		})
+	})
 })
 
 func dummyVM(nadName string) *virtv1.VirtualMachine {
@@ -281,18 +555,34 @@ func dummyVM(nadName string) *virtv1.VirtualMachine {
 	}
 }
 
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
-	return &virtv1.VirtualMachineInstance{
+func dummyVMI(nadName string, opts ...VMCreationOptions) *virtv1.VirtualMachineInstance {
+	vmi := &virtv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
 			Namespace: "ns1",
 		},
 		Spec: dummyVMISpec(nadName),
 	}
+
+	for _, opt := range opts {
+		opt(vmi)
+	}
+
+	return vmi
 }
 
 func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 	return virtv1.VirtualMachineInstanceSpec{
+		Domain: virtv1.DomainSpec{
+			Devices: virtv1.Devices{
+				Interfaces: []virtv1.Interface{
+					{
+						Name:       "podnet",
+						MacAddress: "02:03:04:05:06:07",
+					},
+				},
+			},
+		},
 		Networks: []virtv1.Network{
 			{
 				Name:          "podnet",
@@ -328,7 +618,13 @@ func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
 }
 
 func dummyPrimaryNetworkNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
-	return dummyNADWithConfig(nadName+"primary", `{"name": "primarynet", "role": "primary", "allowPersistentIPs": true}`)
+	return dummyNADWithConfig(nadName+"primary", `
+{
+	"name": "primarynet",
+	"role": "primary",
+	"allowPersistentIPs": true,
+	"subnets": "192.168.0.0/16,fd12:1234::123/64"
+}`)
 }
 func dummyNADWithoutPersistentIPs(nadName string) *nadv1.NetworkAttachmentDefinition {
 	return dummyNADWithConfig(nadName, `{"name": "goodnet"}`)
@@ -354,6 +650,11 @@ func dummyPodForVM(nadName string, vmName string) *corev1.Pod {
 	})
 }
 
+func dummyPodForVMWithAnnotation(nadName string, vmName string, annotations map[string]string) *corev1.Pod {
+	annotations["kubevirt.io/domain"] = vmName
+	return pod(nadName, annotations)
+}
+
 func dummyPod(nadName string) *corev1.Pod {
 	return pod(nadName, nil)
 }
@@ -372,5 +673,31 @@ func pod(nadName string, annotations map[string]string) *corev1.Pod {
 			Namespace:   "ns1",
 			Annotations: baseAnnotations,
 		},
+	}
+}
+
+type VMCreationOptions func(*virtv1.VirtualMachineInstance)
+
+func WithIPRequests(logicalNetworkName string, ips ...string) VMCreationOptions {
+	return func(vm *virtv1.VirtualMachineInstance) {
+		currentLogicalNetsAddrs := map[string][]string{}
+		rawCurrentLogicalNetsAddrs, isAnnotationPresent := vm.Annotations[config.IPRequestsAnnotation]
+		if !isAnnotationPresent {
+			currentLogicalNetsAddrs = map[string][]string{logicalNetworkName: ips}
+		} else {
+			if err := json.Unmarshal([]byte(rawCurrentLogicalNetsAddrs), &currentLogicalNetsAddrs); err != nil {
+				return
+			}
+			currentLogicalNetsAddrs[logicalNetworkName] = ips
+		}
+
+		rawVMAddrsRequest, err := json.Marshal(currentLogicalNetsAddrs)
+		if err != nil {
+			return
+		}
+		if vm.Annotations == nil {
+			vm.Annotations = map[string]string{}
+		}
+		vm.Annotations[config.IPRequestsAnnotation] = string(rawVMAddrsRequest)
 	}
 }

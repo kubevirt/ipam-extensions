@@ -8,15 +8,17 @@ import (
 type NetworkRole string
 
 const (
-	NetworkRolePrimary NetworkRole = "primary"
+	NetworkRolePrimary                   NetworkRole = "primary"
+	IPRequestsAnnotation                 string      = "network.kubevirt.io/addresses"
+	MultusDefaultNetAnnotation           string      = "v1.multus-cni.io/default-network"
+	OVNPrimaryNetworkIPAMClaimAnnotation string      = "k8s.ovn.org/primary-udn-ipamclaim"
 )
-
-const OVNPrimaryNetworkIPAMClaimAnnotation = "k8s.ovn.org/primary-udn-ipamclaim"
 
 type RelevantConfig struct {
 	Name               string      `json:"name"`
 	AllowPersistentIPs bool        `json:"allowPersistentIPs,omitempty"`
 	Role               NetworkRole `json:"role,omitempty"`
+	Subnets            string      `json:"subnets,omitempty"`
 }
 
 func NewConfig(nadSpec string) (*RelevantConfig, error) {
