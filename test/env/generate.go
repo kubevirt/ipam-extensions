@@ -1,6 +1,7 @@
 package env
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -153,5 +154,61 @@ func NewVirtualMachine(vmi *kubevirtv1.VirtualMachineInstance, opts ...VMOption)
 func WithRunning() VMOption {
 	return func(vm *kubevirtv1.VirtualMachine) {
 		vm.Spec.Running = pointer.Bool(true)
+	}
+}
+
+func WithStaticIPRequests(interfaceName string, ips ...string) VMOption {
+	const IPRequestsAnnotation string = "network.kubevirt.io/addresses"
+	return func(vm *kubevirtv1.VirtualMachine) {
+		if vm.Annotations == nil {
+			vm.Annotations = make(map[string]string)
+		}
+
+		// Parse existing annotation if it exists
+		ipRequestsMap := make(map[string][]string)
+		if existingAnnotation, exists := vm.Annotations[IPRequestsAnnotation]; exists {
+			if err := json.Unmarshal([]byte(existingAnnotation), &ipRequestsMap); err != nil {
+				panic(fmt.Sprintf("failed to unmarshal existing IP requests: %v", err))
+			}
+		}
+
+		// Add or update the IP requests for the specified interface
+		ipRequestsMap[interfaceName] = ips
+
+		ipRequestsJSON, err := json.Marshal(ipRequestsMap)
+		if err != nil {
+			// In a real implementation, you might want to handle this error differently
+			// For now, we'll panic as this is a test utility
+			panic(fmt.Sprintf("failed to marshal IP requests: %v", err))
+		}
+
+		if vm.Spec.Template.ObjectMeta.Annotations == nil {
+			vm.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		}
+		vm.Spec.Template.ObjectMeta.Annotations[IPRequestsAnnotation] = string(ipRequestsJSON)
+	}
+}
+
+func WithMACAddress(interfaceName, macAddress string) VMOption {
+	return func(vm *kubevirtv1.VirtualMachine) {
+		// Ensure the template spec exists
+		if vm.Spec.Template == nil {
+			vm.Spec.Template = &kubevirtv1.VirtualMachineInstanceTemplateSpec{}
+		}
+
+		// Find the interface with the specified name and set the MAC address
+		for i := range vm.Spec.Template.Spec.Domain.Devices.Interfaces {
+			if vm.Spec.Template.Spec.Domain.Devices.Interfaces[i].Name == interfaceName {
+				vm.Spec.Template.Spec.Domain.Devices.Interfaces[i].MacAddress = macAddress
+				return
+			}
+		}
+
+		// If interface not found, create a new one
+		newInterface := kubevirtv1.Interface{
+			Name:       interfaceName,
+			MacAddress: macAddress,
+		}
+		vm.Spec.Template.Spec.Domain.Devices.Interfaces = append(vm.Spec.Template.Spec.Domain.Devices.Interfaces, newInterface)
 	}
 }
