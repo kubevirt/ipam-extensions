@@ -42,8 +42,8 @@ import (
 )
 
 const (
-	secondaryLogicalNetworkInterfaceName = "multus"
-	primaryLogicalNetworkInterfaceName   = "pod"
+	secondaryLogicalNetworkInterfaceName = "multus_iface"
+	primaryLogicalNetworkInterfaceName   = "pod_iface"
 	nadName                              = "l2-net-attach-def"
 )
 
