@@ -151,7 +151,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+						Name:       claims.ComposeKey(vmName, "random_net"),
 						Namespace:  namespace,
 						Finalizers: []string{claims.KubevirtVMFinalizer},
 						Labels:     claims.OwnedByVMLabel(vmName),
@@ -167,7 +167,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:       fmt.Sprintf("%s.%s", vmName, "podnet"),
+						Name:       claims.ComposeKey(vmName, "podnet"),
 						Namespace:  namespace,
 						Finalizers: []string{claims.KubevirtVMFinalizer},
 						Labels:     claims.OwnedByVMLabel(vmName),
@@ -225,7 +225,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedResponse: reconcile.Result{},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:       claims.ComposeKey(vmName, "random_net"),
 					Namespace:  namespace,
 					Finalizers: []string{claims.KubevirtVMFinalizer},
 					Labels:     claims.OwnedByVMLabel(vmName),
@@ -235,7 +235,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "vm1.randomnet",
+						Name:      claims.ComposeKey(vmName, "random_net"),
 						Namespace: "ns1",
 						Labels:    claims.OwnedByVMLabel(vmName),
 					},
@@ -248,7 +248,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedResponse: reconcile.Result{},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:       claims.ComposeKey(vmName, "random_net"),
 					Namespace:  namespace,
 					Finalizers: []string{claims.KubevirtVMFinalizer},
 					Labels:     claims.OwnedByVMLabel(vmName),
@@ -258,7 +258,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:       "vm1.randomnet",
+						Name:       claims.ComposeKey(vmName, "random_net"),
 						Namespace:  "ns1",
 						Finalizers: []string{claims.KubevirtVMFinalizer},
 						Labels:     claims.OwnedByVMLabel(vmName),
@@ -272,7 +272,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedResponse: reconcile.Result{},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:       claims.ComposeKey(vmName, "random_net"),
 					Namespace:  namespace,
 					Finalizers: []string{claims.KubevirtVMFinalizer},
 					Labels:     claims.OwnedByVMLabel(vmName),
@@ -282,7 +282,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "vm1.randomnet",
+						Name:      claims.ComposeKey(vmName, "random_net"),
 						Namespace: "ns1",
 						Labels:    claims.OwnedByVMLabel(vmName),
 					},
@@ -298,7 +298,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedResponse: reconcile.Result{},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:       claims.ComposeKey(vmName, "random_net"),
 					Namespace:  namespace,
 					Finalizers: []string{claims.KubevirtVMFinalizer},
 					Labels:     claims.OwnedByVMLabel(vmName),
@@ -315,7 +315,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:       "vm1.randomnet",
+						Name:       claims.ComposeKey(vmName, "random_net"),
 						Namespace:  "ns1",
 						Finalizers: []string{claims.KubevirtVMFinalizer},
 						Labels:     claims.OwnedByVMLabel(vmName),
@@ -336,7 +336,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedResponse: reconcile.Result{},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:       claims.ComposeKey(vmName, "random_net"),
 					Namespace:  namespace,
 					Finalizers: []string{claims.KubevirtVMFinalizer},
 					Labels:     claims.OwnedByVMLabel(vmName),
@@ -346,7 +346,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "vm1.randomnet",
+						Name:      claims.ComposeKey(vmName, "random_net"),
 						Namespace: "ns1",
 						Labels:    claims.OwnedByVMLabel(vmName),
 					},
@@ -362,12 +362,13 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:      claims.ComposeKey(vmName, "random_net"),
 					Namespace: namespace,
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
-			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
+			expectedError: fmt.Errorf(`failed since it found an existing IPAMClaim for "%s"`,
+				claims.ComposeKey(vmName, "random_net")),
 		}),
 		Entry("found an existing IPAMClaim for the same VM", testConfig{
 			inputVM:  decorateVMWithUID(dummyUID, dummyVM(dummyVMISpec(nadName))),
@@ -377,7 +378,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:      claims.ComposeKey(vmName, "random_net"),
 					Namespace: namespace,
 					OwnerReferences: []metav1.OwnerReference{
 						{
@@ -396,7 +397,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "vm1.randomnet",
+						Name:      claims.ComposeKey(vmName, "random_net"),
 						Namespace: "ns1",
 						Labels:    claims.OwnedByVMLabel(vmName),
 						OwnerReferences: []metav1.OwnerReference{
@@ -421,7 +422,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			},
 			existingIPAMClaim: &ipamclaimsapi.IPAMClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s.%s", vmName, "randomnet"),
+					Name:      claims.ComposeKey(vmName, "random_net"),
 					Namespace: namespace,
 					OwnerReferences: []metav1.OwnerReference{
 						{
@@ -436,7 +437,8 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 				},
 				Spec: ipamclaimsapi.IPAMClaimSpec{Network: "doesitmatter?"},
 			},
-			expectedError: fmt.Errorf("failed since it found an existing IPAMClaim for \"vm1.randomnet\""),
+			expectedError: fmt.Errorf(`failed since it found an existing IPAMClaim for "%s"`,
+				claims.ComposeKey(vmName, "random_net")),
 		}),
 		Entry("a lonesome VMI (with no corresponding VM) is a valid migration use-case", testConfig{
 			inputVMI: dummyVMI(dummyVMISpec(nadName)),
@@ -447,7 +449,7 @@ var _ = Describe("VMI IPAM controller", Serial, func() {
 			expectedIPAMClaims: []ipamclaimsapi.IPAMClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:       "vm1.randomnet",
+						Name:       claims.ComposeKey(vmName, "random_net"),
 						Namespace:  "ns1",
 						Labels:     claims.OwnedByVMLabel(vmName),
 						Finalizers: []string{claims.KubevirtVMFinalizer},
@@ -506,7 +508,7 @@ func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 				NetworkSource: virtv1.NetworkSource{Pod: &virtv1.PodNetwork{}},
 			},
 			{
-				Name: "randomnet",
+				Name: "random_net",
 				NetworkSource: virtv1.NetworkSource{
 					Multus: &virtv1.MultusNetwork{
 						NetworkName: nadName,
