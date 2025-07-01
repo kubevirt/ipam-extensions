@@ -1,9 +1,9 @@
 name: Checks
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "release-0.2.4" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "release-0.2.4" ]
 
 jobs:
   build-linters-unit-tests:
