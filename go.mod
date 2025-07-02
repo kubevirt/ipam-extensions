@@ -6,14 +6,14 @@ toolchain go1.23.4
 
 require (
 	github.com/go-logr/logr v1.4.2
-	github.com/k8snetworkplumbingwg/ipamclaims v0.4.0-alpha
+	github.com/k8snetworkplumbingwg/ipamclaims v0.5.0-alpha
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.5
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	gomodules.xyz/jsonpatch/v2 v2.4.0
-	k8s.io/api v0.32.0
-	k8s.io/apimachinery v0.32.0
-	k8s.io/client-go v0.32.0
+	k8s.io/api v0.32.5
+	k8s.io/apimachinery v0.32.5
+	k8s.io/client-go v0.32.5
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	kubevirt.io/api v1.4.0
 	sigs.k8s.io/controller-runtime v0.19.4
