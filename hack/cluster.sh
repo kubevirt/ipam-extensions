@@ -52,6 +52,11 @@ function up() {
     kind delete cluster --name $cluster_name
     (
         cd ${OVN_KUBERNETES_DIR}
+
+        # TODO: Delete this after koji is back
+        export OVN_REPO=https://github.com/ovn-org/ovn
+        export OVN_GITREF=v24.09.2
+
         ./contrib/kind.sh --local-kind-registry ${KIND_ARGS} -cn ${cluster_name} --opt-out-kv-ipam
     )
 }
