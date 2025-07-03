@@ -123,6 +123,7 @@ func WithCloudInitNoCloudVolume(cloudInitNetworkData string) VMIOption {
 type VMOption func(vm *kubevirtv1.VirtualMachine)
 
 func NewVirtualMachine(vmi *kubevirtv1.VirtualMachineInstance, opts ...VMOption) *kubevirtv1.VirtualMachine {
+	manuallyStartOrStopVMs := kubevirtv1.RunStrategyManual
 	vm := &kubevirtv1.VirtualMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: kubevirtv1.GroupVersion.String(),
@@ -133,7 +134,7 @@ func NewVirtualMachine(vmi *kubevirtv1.VirtualMachineInstance, opts ...VMOption)
 			Namespace: vmi.Namespace,
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
-			Running: pointer.Bool(false),
+			RunStrategy: &manuallyStartOrStopVMs,
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: vmi.ObjectMeta.Annotations,
@@ -153,7 +154,8 @@ func NewVirtualMachine(vmi *kubevirtv1.VirtualMachineInstance, opts ...VMOption)
 
 func WithRunning() VMOption {
 	return func(vm *kubevirtv1.VirtualMachine) {
-		vm.Spec.Running = pointer.Bool(true)
+		always := kubevirtv1.RunStrategyAlways
+		vm.Spec.RunStrategy = &always
 	}
 }
 
