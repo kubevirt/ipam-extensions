@@ -69,6 +69,7 @@ func main() {
 	var probeAddr string
 	var enableHTTP2 bool
 	var certDir string
+	var defaultNetworkNadNamespace string
 
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -81,6 +82,12 @@ func main() {
 		"certificates-dir",
 		"",
 		"Specify the certificates directory for the webhook server",
+	)
+	flag.StringVar(
+		&defaultNetworkNadNamespace,
+		"default-network-nad-namespace",
+		"ovn-kubernetes",
+		"Define the namespace where the NAD to override the default network is located",
 	)
 
 	opts := zap.Options{
@@ -175,7 +182,11 @@ func main() {
 
 	mgr.GetWebhookServer().Register(
 		"/mutate-v1-pod",
-		&webhook.Admission{Handler: ipamclaimswebhook.NewIPAMClaimsValet(mgr)},
+		&webhook.Admission{
+			Handler: ipamclaimswebhook.NewIPAMClaimsValet(
+				mgr,
+				ipamclaimswebhook.WithDefaultNetNADNamespace(defaultNetworkNadNamespace),
+			)},
 	)
 
 	setupLog.Info("starting manager")

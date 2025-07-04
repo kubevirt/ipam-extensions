@@ -49,6 +49,23 @@ func MatchIPsAtInterfaceByName(interfaceName string, ipsMatcher gomegatypes.Gome
 			WithTransform(interfaceIPs, ipsMatcher)))
 }
 
+func MatchMACAddressAtInterfaceByName(interfaceName string, macAddress string) gomegatypes.GomegaMatcher {
+	return WithTransform(
+		func(vmi *kubevirtv1.VirtualMachineInstance) *kubevirtv1.VirtualMachineInstanceNetworkInterface {
+			return lookupInterfaceStatusByName(vmi.Status.Interfaces, interfaceName)
+		},
+		SatisfyAll(
+			Not(BeNil()),
+			WithTransform(interfaceMACAddress, Equal(macAddress))))
+}
+
+func interfaceMACAddress(networkInterface *kubevirtv1.VirtualMachineInstanceNetworkInterface) string {
+	if networkInterface == nil {
+		return ""
+	}
+	return networkInterface.MAC
+}
+
 func BeRestarted(oldUID types.UID) gomegatypes.GomegaMatcher {
 	return gstruct.PointTo(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 		"ObjectMeta": gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
