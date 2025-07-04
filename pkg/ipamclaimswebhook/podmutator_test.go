@@ -74,8 +74,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 	})
 
 	const (
-		nadName = "ns1/supadupanet"
-		vmName  = "vm1"
+		nadName       = "ns1/supadupanet"
+		vmName        = "vm1"
+		namespaceName = "randomNS"
 	)
 
 	DescribeTable("admits / rejects pod creation requests as expected", func(config testConfig) {
@@ -108,7 +109,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
 		Expect(err).NotTo(HaveOccurred())
 
-		ipamClaimsManager := NewIPAMClaimsValet(mgr)
+		ipamClaimsManager := NewIPAMClaimsValet(mgr, WithDefaultNetNADNamespace(namespaceName))
 
 		result := ipamClaimsManager.Handle(context.Background(), podAdmissionRequest(config.inputPod))
 
@@ -155,7 +156,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
-					Value: "[{\"name\":\"default\",\"namespace\":\"ovn-kubernetes\"," +
+					Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
 						"\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
 				{
@@ -186,7 +187,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
-					Value: "[{\"name\":\"default\",\"namespace\":\"ovn-kubernetes\"," +
+					Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
 						"\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
 			}),
@@ -212,7 +213,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
-					Value: "[{\"name\":\"default\",\"namespace\":\"ovn-kubernetes\"," +
+					Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
 						"\"ips\":[\"192.168.1.10/16\",\"fd20:1234::200/64\"]," +
 						"\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
