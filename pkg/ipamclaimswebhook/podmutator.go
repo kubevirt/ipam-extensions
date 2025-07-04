@@ -55,11 +55,22 @@ type IPAMClaimsValet struct {
 	defaultNetNADNamespace string
 }
 
-func NewIPAMClaimsValet(manager manager.Manager) *IPAMClaimsValet {
-	return &IPAMClaimsValet{
-		decoder:                admission.NewDecoder(manager.GetScheme()),
-		Client:                 manager.GetClient(),
-		defaultNetNADNamespace: "ovn-kubernetes",
+type Option func(*IPAMClaimsValet)
+
+func NewIPAMClaimsValet(manager manager.Manager, opts ...Option) *IPAMClaimsValet {
+	claimsManager := &IPAMClaimsValet{
+		decoder: admission.NewDecoder(manager.GetScheme()),
+		Client:  manager.GetClient(),
+	}
+	for _, opt := range opts {
+		opt(claimsManager)
+	}
+	return claimsManager
+}
+
+func WithDefaultNetNADNamespace(namespace string) Option {
+	return func(ipamValet *IPAMClaimsValet) {
+		ipamValet.defaultNetNADNamespace = namespace
 	}
 }
 
