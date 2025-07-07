@@ -225,7 +225,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: ghcr.io/kubevirt/ipam-controller:latest
+        image: ghcr.io/kubevirt/ipam-controller:main
         livenessProbe:
           httpGet:
             path: /healthz
