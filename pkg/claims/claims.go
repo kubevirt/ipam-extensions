@@ -3,6 +3,8 @@ package claims
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 
 	apitypes "k8s.io/apimachinery/pkg/types"
 
@@ -14,7 +16,16 @@ import (
 	virtv1 "kubevirt.io/api/core/v1"
 )
 
-const KubevirtVMFinalizer = "kubevirt.io/persistent-ipam"
+const (
+	KubevirtVMFinalizer      = "kubevirt.io/persistent-ipam"
+	rfc1123SubdomainsPattern = `[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*`
+	claimKeySeparator        = "."
+)
+
+var (
+	// Define the regex pattern for valid RFC 1123 subdomains
+	rfc1123SubdomainsRegexp = regexp.MustCompile(rfc1123SubdomainsPattern)
+)
 
 func Cleanup(c client.Client, vmiKey apitypes.NamespacedName) error {
 	ipamClaims := &ipamclaimsapi.IPAMClaimList{}
@@ -43,5 +54,22 @@ func OwnedByVMLabel(vmiName string) client.MatchingLabels {
 }
 
 func ComposeKey(vmName, networkName string) string {
-	return fmt.Sprintf("%s.%s", vmName, networkName)
+	return convertToCRDName(vmName + claimKeySeparator + networkName)
+}
+
+func convertToCRDName(input string) string {
+	// Convert to lowercase
+	crdName := strings.ToLower(input)
+
+	// Find the longest valid substring that matches the pattern
+	matches := rfc1123SubdomainsRegexp.FindAllString(crdName, -1)
+
+	// Join valid substrings with a dot (if there are multiple matches)
+	crdName = strings.Join(matches, claimKeySeparator)
+
+	// Truncate to 253 characters if necessary
+	if len(crdName) > 253 {
+		crdName = crdName[:253]
+	}
+	return crdName
 }
