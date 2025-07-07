@@ -1,6 +1,6 @@
 
-# Image URL to use all building/pushing image targets
-IMG ?= kubevirt-ipam-controller:latest
+# Default to registry path for consistency with CI/CD
+IMG ?= ghcr.io/kubevirt/ipam-controller:$(shell ./hack/sanitize-branch.sh $(shell git rev-parse --abbrev-ref HEAD))
 PASST_IMG ?= kubevirt/passt-binding-cni:latest
 
 export KUBECONFIG ?= $(shell pwd)/.output/kubeconfig
