@@ -30,6 +30,17 @@ jobs:
         run: |
           echo "git_commit_hash=$(git describe --no-match  --always --abbrev=8 --dirty)" >> $GITHUB_ENV
 
+      - name: Extract branch name
+        shell: bash
+        run: |
+          # Extract branch name and sanitize it for Docker tag compatibility
+          if [[ "${{ github.ref_type }}" == "branch" ]]; then
+            BRANCH_NAME="${{ github.ref_name }}"
+            # Use the sanitize script to clean the branch name
+            SANITIZED_BRANCH=$(./hack/sanitize-branch.sh "$BRANCH_NAME")
+            echo "branch_tag=${SANITIZED_BRANCH}" >> $GITHUB_ENV
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.0.0
 
@@ -46,8 +57,18 @@ jobs:
           KUBEVIRT_VERSION=$(curl -sSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
           echo "KUBEVIRT_VERSION=${KUBEVIRT_VERSION}" >> $GITHUB_ENV
 
+      - name: Push branch-based container images
+        if: github.repository_owner == 'kubevirt' && github.ref_type == 'branch'
+        uses: docker/build-push-action@v5.3.0
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.branch_tag }}
+          file: Dockerfile
+          platforms: ${{ env.BUILD_PLATFORMS }}
+
       - name: Push latest container image
-        if: github.repository_owner == 'kubevirt'
+        if: github.repository_owner == 'kubevirt' && github.ref_type == 'branch' && github.ref_name == 'main'
         uses: docker/build-push-action@v5.3.0
         with:
           context: .

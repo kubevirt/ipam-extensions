@@ -1,8 +1,8 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= kubevirt-ipam-controller:latest
+# Default to registry path for consistency with CI/CD
+IMG ?= ghcr.io/kubevirt/ipam-controller:latest
 PASST_IMG ?= kubevirt/passt-binding-cni:latest
-
 export KUBECONFIG ?= $(shell pwd)/.output/kubeconfig
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.

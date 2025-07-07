@@ -1,9 +1,9 @@
 name: Checks
 on:
   push:
-    branches: [ "release-0.2.1" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "release-0.2.1" ]
+    branches: [ "main" ]
 
 jobs:
   build-linters-unit-tests:
@@ -17,19 +17,40 @@ jobs:
       with:
         go-version-file: 'go.mod'
 
+    - name: Check vendoring
+      run: make check-vendoring
+
     - name: Build
       run: time make
 
     - name: Linters
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v7
       with:
-        version: v1.57.2
+        version: v2.0.2
         args: --timeout 3m --verbose cmd/... pkg/...
+
+    - name: Extract branch name
+      shell: bash
+      run: |
+        # Extract branch name and sanitize it for Docker tag compatibility
+        if [[ "${{ github.ref_type }}" == "branch" ]]; then
+          BRANCH_NAME="${{ github.ref_name }}"
+          # Call the branch sanitizer script
+          SANITIZED_BRANCH=$(./hack/sanitize-branch.sh "$BRANCH_NAME")
+          echo "branch_tag=${SANITIZED_BRANCH}" >> $GITHUB_ENV
+        elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # For tags, use the tag name directly
+          echo "branch_tag=${{ github.ref_name }}" >> $GITHUB_ENV
+        else
+          # Fallback to 'latest' for other cases
+          echo "branch_tag=latest" >> $GITHUB_ENV
+        fi
+
 
     - name: Ensure latest install manifest
       run: |
         echo "" > dist/install.yaml
-        IMG=ghcr.io/kubevirt/ipam-controller:latest make build-installer
+        IMG=ghcr.io/kubevirt/ipam-controller:${{ env.branch_tag }} make build-installer
         if [[ -n "$(git status --porcelain)" ]]; then
           echo "Please run 'make build-installer' and commit those changes"
           git status --porcelain
@@ -37,7 +58,7 @@ jobs:
         fi
 
     - name: Test
-      run: ENVTEST_VERSION="release-0.17" make test
+      run: ENVTEST_VERSION="release-0.20" make test
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -48,6 +69,23 @@ jobs:
       uses: actions/setup-go@v3
       with:
         go-version-file: 'go.mod'
+
+    - name: Extract branch name
+      shell: bash
+      run: |
+        # Extract branch name and sanitize it for Docker tag compatibility
+        if [[ "${{ github.ref_type }}" == "branch" ]]; then
+          BRANCH_NAME="${{ github.ref_name }}"
+          # Call the branch sanitizer script
+          SANITIZED_BRANCH=$(./hack/sanitize-branch.sh "$BRANCH_NAME")
+          echo "branch_tag=${SANITIZED_BRANCH}" >> $GITHUB_ENV
+        elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # For tags, use the tag name directly
+          echo "branch_tag=${{ github.ref_name }}" >> $GITHUB_ENV
+        else
+          # Fallback to 'latest' for other cases
+          echo "branch_tag=latest" >> $GITHUB_ENV
+        fi
 
     - name: Free up disk space
       run: |
