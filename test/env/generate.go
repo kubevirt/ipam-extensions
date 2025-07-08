@@ -41,6 +41,25 @@ func GenerateLayer2WithSubnetNAD(nadName, namespace, role string) *nadv1.Network
 	}
 }
 
+func GenerateDefaultNetworkNAD(namespace string) *nadv1.NetworkAttachmentDefinition {
+	const nadName = "default"
+	return &nadv1.NetworkAttachmentDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      nadName,
+		},
+		Spec: nadv1.NetworkAttachmentDefinitionSpec{
+			Config: fmt.Sprintf(`
+{
+        "cniVersion": "0.3.0",
+        "name": "%s",
+        "type": "ovn-k8s-cni-overlay"
+}
+`, nadName),
+		},
+	}
+}
+
 type VMIOption func(vmi *kubevirtv1.VirtualMachineInstance)
 
 func NewVirtualMachineInstance(namespace string, opts ...VMIOption) *kubevirtv1.VirtualMachineInstance {

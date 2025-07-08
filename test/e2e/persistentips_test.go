@@ -351,6 +351,14 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 				td.TearDown()
 			})
 
+			// TODO: delete the code block below once OVN-Kubernetes provisions
+			// the default network NAD
+			const ovnKubernetesNamespace = "ovn-kubernetes"
+			defaultNetNAD := testenv.GenerateDefaultNetworkNAD(ovnKubernetesNamespace)
+			By("Creating default network NetworkAttachmentDefinition")
+			Expect(testenv.Client.Create(context.Background(), defaultNetNAD)).To(Succeed())
+			// END code to be deleted block
+
 			nad := testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, rolePrimary)
 			By("Create NetworkAttachmentDefinition")
 			Expect(testenv.Client.Create(context.Background(), nad)).To(Succeed())
