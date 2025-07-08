@@ -154,12 +154,6 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 					Value:     "vm1.podnet",
 				},
 				{
-					Operation: "add",
-					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
-					Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
-						"\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
-				},
-				{
 					Operation: "replace",
 					Path:      "/metadata/annotations/k8s.v1.cni.cncf.io~1networks",
 					Value:     "[{\"name\":\"supadupanet\",\"namespace\":\"ns1\",\"ipam-claim-reference\":\"vm1.randomnet\"}]",
@@ -184,6 +178,26 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
 					Value:     "vm1.podnet",
 				},
+			}),
+		}),
+		Entry("vm launcher pod with a MAC address request for primary user defined network defined "+
+			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName, WithMACRequest("podnet", "02:03:04:05:06:07")),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyPrimaryNetworkNAD(nadName),
+			},
+			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
+			},
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
@@ -192,10 +206,14 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			}),
 		}),
-		Entry("vm launcher pod with requested IPs for primary user defined network defined "+
+		Entry("vm launcher pod with requested MAC and IPs for primary user defined network defined "+
 			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
+			inputVM: dummyVM(nadName),
+			inputVMI: dummyVMI(
+				nadName,
+				WithMACRequest("podnet", "02:03:04:05:06:07"),
+				WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200"),
+			),
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
 				dummyPrimaryNetworkNAD(nadName),
 			},
@@ -348,8 +366,7 @@ func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 			Devices: virtv1.Devices{
 				Interfaces: []virtv1.Interface{
 					{
-						Name:       "podnet",
-						MacAddress: "02:03:04:05:06:07",
+						Name: "podnet",
 					},
 				},
 			},
@@ -465,5 +482,17 @@ func WithIPRequests(logicalNetworkName string, ips ...string) VMCreationOptions 
 			vm.Annotations = map[string]string{config.IPRequestsAnnotation: string(rawVMAddrsRequest)}
 		}
 		return nil
+	}
+}
+
+func WithMACRequest(logicalNetworkName string, macAddress string) VMCreationOptions {
+	return func(vm *virtv1.VirtualMachineInstance) error {
+		for i, iface := range vm.Spec.Domain.Devices.Interfaces {
+			if iface.Name == logicalNetworkName {
+				vm.Spec.Domain.Devices.Interfaces[i].MacAddress = macAddress
+				return nil
+			}
+		}
+		return fmt.Errorf("interface %q not found", logicalNetworkName)
 	}
 }
