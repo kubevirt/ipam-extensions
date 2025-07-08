@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -354,9 +355,8 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 			// TODO: delete the code block below once OVN-Kubernetes provisions
 			// the default network NAD
 			const ovnKubernetesNamespace = "ovn-kubernetes"
-			defaultNetNAD := testenv.GenerateDefaultNetworkNAD(ovnKubernetesNamespace)
-			By("Creating default network NetworkAttachmentDefinition")
-			Expect(testenv.Client.Create(context.Background(), defaultNetNAD)).To(Succeed())
+			By("Ensuring the cluster default network attachment NetworkAttachmentDefinition exists")
+			Expect(ensureDefaultNetworkAttachmentNAD(ovnKubernetesNamespace)).To(Succeed())
 			// END code to be deleted block
 
 			nad := testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, rolePrimary)
@@ -494,4 +494,25 @@ func primaryUDNNamespaceLabels() map[string]string {
 	return map[string]string{
 		"k8s.ovn.org/primary-user-defined-network": "",
 	}
+}
+
+func ensureDefaultNetworkAttachmentNAD(namespace string) error {
+	defaultNetNad := &nadv1.NetworkAttachmentDefinition{ObjectMeta: metav1.ObjectMeta{
+		Name:      "default",
+		Namespace: namespace,
+	}}
+
+	err := testenv.Client.Get(context.Background(), client.ObjectKeyFromObject(defaultNetNad), defaultNetNad)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	if defaultNetNad != nil {
+		return nil
+	}
+
+	defaultNetNad.Spec = nadv1.NetworkAttachmentDefinitionSpec{
+		Config: "{\"cniVersion\": \"0.4.0\", \"name\": \"ovn-kubernetes\", \"type\": \"ovn-k8s-cni-overlay\"}",
+	}
+	return testenv.Client.Create(context.Background(), defaultNetNad)
 }
