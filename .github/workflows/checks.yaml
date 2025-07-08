@@ -29,10 +29,20 @@ jobs:
         version: v2.0.2
         args: --timeout 3m --verbose cmd/... pkg/...
 
-    - name: Ensure latest install manifest
+    - name: Sanitize branch name for container image tag
+      shell: bash
+      run: |
+        BRANCH_NAME="${{ github.ref_name }}"
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          BRANCH_NAME="${{ github.base_ref }}"
+        fi
+        SANITIZED_BRANCH=$(./hack/sanitize-branch.sh "${BRANCH_NAME}")
+        echo "image_tag=${SANITIZED_BRANCH}" >> $GITHUB_ENV
+
+    - name: Ensure branch contains manifests with correct image tag
       run: |
         echo "" > dist/install.yaml
-        IMG=ghcr.io/kubevirt/ipam-controller:latest make build-installer
+        IMG=ghcr.io/kubevirt/ipam-controller:${{ env.image_tag }} make build-installer
         if [[ -n "$(git status --porcelain)" ]]; then
           echo "Please run 'make build-installer' and commit those changes"
           git status --porcelain
