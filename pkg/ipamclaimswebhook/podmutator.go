@@ -162,11 +162,11 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 			)
 
 			// TODO: once we have deprecated the ipam-claim dedicated OVN-K annotation, we can drop the if below
-			//if len(primaryUDNIPRequests) > 0 {
-			if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
-				return admission.Errored(http.StatusInternalServerError, err)
+			if len(primaryUDNIPRequests) > 0 || primaryUDNInterface.MacAddress != "" {
+				if err := definePodMultusDefaultNetworkAnnotation(newPod, primaryUDNNetworkSelectionElement); err != nil {
+					return admission.Errored(http.StatusInternalServerError, err)
+				}
 			}
-			//}
 
 			// Set the legacy OVN primary network IPAM claim annotation for backwards compatibility
 			updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(newPod, claims.ComposeKey(vmi.Name, primaryUDNInterface.Name))
