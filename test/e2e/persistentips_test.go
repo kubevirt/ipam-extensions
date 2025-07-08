@@ -487,6 +487,8 @@ func logFailure(failureCount int) {
 	logCommand([]string{"get", "vm", "-A", "-oyaml"}, "vms", failureCount)
 	logCommand([]string{"get", "vmi", "-A", "-oyaml"}, "vmis", failureCount)
 	logCommand([]string{"get", "ipamclaims", "-A", "-oyaml"}, "ipamclaims", failureCount)
+	logCommand([]string{"get", "net-attach-def", "-A", "-oyaml"}, "network-attachments", failureCount)
+	logCommand([]string{"get", "namespaces", "-A", "-oyaml"}, "namespaces", failureCount)
 	logOvnPods(failureCount)
 }
 
