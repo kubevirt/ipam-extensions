@@ -60,11 +60,15 @@ type testParams struct {
 }
 
 var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
-	var failureCount int = 0
+	var (
+		failureCount int = 0
+		namespace    string
+	)
+
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
 			failureCount++
-			logFailure(failureCount)
+			logFailure(failureCount, namespace)
 		}
 	})
 
@@ -78,6 +82,7 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
+			namespace = td.Namespace
 			labels := map[string]string{}
 			if params.role == rolePrimary {
 				labels["k8s.ovn.org/primary-user-defined-network"] = ""
@@ -324,12 +329,15 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 )
 
 var _ = Describe("Primary User Defined Network attachment", func() {
-	var failureCount = 0
+	var (
+		failureCount = 0
+		namespace    string
+	)
 
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
 			failureCount++
-			logFailure(failureCount)
+			logFailure(failureCount, namespace)
 		}
 	})
 
@@ -347,6 +355,7 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
+			namespace = td.Namespace
 			td.SetUp(primaryUDNNamespaceLabels())
 			DeferCleanup(func() {
 				td.TearDown()
@@ -480,7 +489,7 @@ ethernets:
 	)
 }
 
-func logFailure(failureCount int) {
+func logFailure(failureCount int, namespace string) {
 	By(fmt.Sprintf("Test failed, collecting logs and artifacts, failure count %d, process %d", failureCount, GinkgoParallelProcess()))
 
 	logCommand([]string{"get", "pods", "-A"}, "pods", failureCount)
@@ -489,6 +498,7 @@ func logFailure(failureCount int) {
 	logCommand([]string{"get", "ipamclaims", "-A", "-oyaml"}, "ipamclaims", failureCount)
 	logCommand([]string{"get", "net-attach-def", "-A", "-oyaml"}, "network-attachments", failureCount)
 	logCommand([]string{"get", "namespaces", "-A", "-oyaml"}, "namespaces", failureCount)
+	logCommand([]string{"get", "pods", "-n", namespace, "-oyaml"}, "pods-on-test-namespace", failureCount)
 	logOvnPods(failureCount)
 }
 
