@@ -3,6 +3,7 @@ package ipamclaimswebhook
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -32,6 +33,8 @@ import (
 
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 )
 
 type testConfig struct {
@@ -71,8 +74,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 	})
 
 	const (
-		nadName = "ns1/supadupanet"
-		vmName  = "vm1"
+		nadName       = "ns1/supadupanet"
+		vmName        = "vm1"
+		namespaceName = "randomNS"
 	)
 
 	DescribeTable("admits / rejects pod creation requests as expected", func(config testConfig) {
@@ -105,7 +109,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
 		Expect(err).NotTo(HaveOccurred())
 
-		ipamClaimsManager := NewIPAMClaimsValet(mgr)
+		ipamClaimsManager := NewIPAMClaimsValet(mgr, WithDefaultNetNADNamespace(namespaceName))
 
 		result := ipamClaimsManager.Handle(context.Background(), podAdmissionRequest(config.inputPod))
 
@@ -156,7 +160,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			}),
 		}),
-		Entry("vm launcher pod with with primary user defined network defined "+
+		Entry("vm launcher pod with primary user defined network defined "+
 			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName),
@@ -168,11 +172,68 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				Allowed:   true,
 				PatchType: &patchType,
 			},
-			expectedAdmissionPatches: Equal([]jsonpatch.JsonPatchOperation{
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
 				{
 					Operation: "add",
 					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
 					Value:     "vm1.podnet",
+				},
+			}),
+		}),
+		Entry("vm launcher pod with a MAC address request for primary user defined network defined "+
+			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
+			inputVM:  dummyVM(nadName),
+			inputVMI: dummyVMI(nadName, WithMACRequest("podnet", "02:03:04:05:06:07")),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyPrimaryNetworkNAD(nadName),
+			},
+			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
+			},
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
+						"\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
+				},
+			}),
+		}),
+		Entry("vm launcher pod with requested MAC and IPs for primary user defined network defined "+
+			"at namespace with persistent IPs enabled requests an IPAMClaim", testConfig{
+			inputVM: dummyVM(nadName),
+			inputVMI: dummyVMI(
+				nadName,
+				WithMACRequest("podnet", "02:03:04:05:06:07"),
+				WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200"),
+			),
+			inputNADs: []*nadv1.NetworkAttachmentDefinition{
+				dummyPrimaryNetworkNAD(nadName),
+			},
+			inputPod: dummyPodForVM("" /*without network selection element*/, vmName),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed:   true,
+				PatchType: &patchType,
+			},
+			expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
+					Value:     "vm1.podnet",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
+					Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
+						"\"ips\":[\"192.168.1.10/16\",\"fd20:1234::200/64\"]," +
+						"\"mac\":\"02:03:04:05:06:07\",\"ipam-claim-reference\":\"vm1.podnet\"}]",
 				},
 			}),
 		}),
@@ -281,18 +342,35 @@ func dummyVM(nadName string) *virtv1.VirtualMachine {
 	}
 }
 
-func dummyVMI(nadName string) *virtv1.VirtualMachineInstance {
-	return &virtv1.VirtualMachineInstance{
+func dummyVMI(nadName string, opts ...VMCreationOptions) *virtv1.VirtualMachineInstance {
+	vmi := &virtv1.VirtualMachineInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vm1",
 			Namespace: "ns1",
 		},
 		Spec: dummyVMISpec(nadName),
 	}
+
+	for _, opt := range opts {
+		if err := opt(vmi); err != nil {
+			panic(err)
+		}
+	}
+
+	return vmi
 }
 
 func dummyVMISpec(nadName string) virtv1.VirtualMachineInstanceSpec {
 	return virtv1.VirtualMachineInstanceSpec{
+		Domain: virtv1.DomainSpec{
+			Devices: virtv1.Devices{
+				Interfaces: []virtv1.Interface{
+					{
+						Name: "podnet",
+					},
+				},
+			},
+		},
 		Networks: []virtv1.Network{
 			{
 				Name:          "podnet",
@@ -328,7 +406,13 @@ func dummyNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
 }
 
 func dummyPrimaryNetworkNAD(nadName string) *nadv1.NetworkAttachmentDefinition {
-	return dummyNADWithConfig(nadName+"primary", `{"name": "primarynet", "role": "primary", "allowPersistentIPs": true}`)
+	return dummyNADWithConfig(nadName+"primary", `
+{
+	"name": "primarynet",
+	"role": "primary",
+	"allowPersistentIPs": true,
+	"subnets": "192.168.0.0/16,fd12:1234::123/64"
+}`)
 }
 func dummyNADWithoutPersistentIPs(nadName string) *nadv1.NetworkAttachmentDefinition {
 	return dummyNADWithConfig(nadName, `{"name": "goodnet"}`)
@@ -372,5 +456,43 @@ func pod(nadName string, annotations map[string]string) *corev1.Pod {
 			Namespace:   "ns1",
 			Annotations: baseAnnotations,
 		},
+	}
+}
+
+type VMCreationOptions func(*virtv1.VirtualMachineInstance) error
+
+func WithIPRequests(logicalNetworkName string, ips ...string) VMCreationOptions {
+	return func(vm *virtv1.VirtualMachineInstance) error {
+		currentLogicalNetsAddrs := map[string][]string{}
+		rawCurrentLogicalNetsAddrs, isAnnotationPresent := vm.Annotations[config.IPRequestsAnnotation]
+		if !isAnnotationPresent {
+			currentLogicalNetsAddrs = map[string][]string{logicalNetworkName: ips}
+		} else {
+			if err := json.Unmarshal([]byte(rawCurrentLogicalNetsAddrs), &currentLogicalNetsAddrs); err != nil {
+				return fmt.Errorf("failed to unmarshal current logical nets addrs: %w", err)
+			}
+			currentLogicalNetsAddrs[logicalNetworkName] = ips
+		}
+
+		rawVMAddrsRequest, err := json.Marshal(currentLogicalNetsAddrs)
+		if err != nil {
+			return fmt.Errorf("failed to marshal current logical nets addrs: %w", err)
+		}
+		if vm.Annotations == nil {
+			vm.Annotations = map[string]string{config.IPRequestsAnnotation: string(rawVMAddrsRequest)}
+		}
+		return nil
+	}
+}
+
+func WithMACRequest(logicalNetworkName string, macAddress string) VMCreationOptions {
+	return func(vm *virtv1.VirtualMachineInstance) error {
+		for i, iface := range vm.Spec.Domain.Devices.Interfaces {
+			if iface.Name == logicalNetworkName {
+				vm.Spec.Domain.Devices.Interfaces[i].MacAddress = macAddress
+				return nil
+			}
+		}
+		return fmt.Errorf("interface %q not found", logicalNetworkName)
 	}
 }

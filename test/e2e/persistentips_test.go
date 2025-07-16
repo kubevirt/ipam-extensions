@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -59,17 +60,15 @@ type testParams struct {
 }
 
 var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
-	var failureCount int = 0
+	var (
+		failureCount int = 0
+		namespace    string
+	)
+
 	JustAfterEach(func() {
 		if CurrentSpecReport().Failed() {
 			failureCount++
-			By(fmt.Sprintf("Test failed, collecting logs and artifacts, failure count %d, process %d", failureCount, GinkgoParallelProcess()))
-
-			logCommand([]string{"get", "pods", "-A"}, "pods", failureCount)
-			logCommand([]string{"get", "vm", "-A", "-oyaml"}, "vms", failureCount)
-			logCommand([]string{"get", "vmi", "-A", "-oyaml"}, "vmis", failureCount)
-			logCommand([]string{"get", "ipamclaims", "-A", "-oyaml"}, "ipamclaims", failureCount)
-			logOvnPods(failureCount)
+			logFailure(failureCount, namespace)
 		}
 	})
 
@@ -83,6 +82,7 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 		BeforeEach(func() {
 			td = testenv.GenerateTestData()
+			namespace = td.Namespace
 			labels := map[string]string{}
 			if params.role == rolePrimary {
 				labels["k8s.ovn.org/primary-user-defined-network"] = ""
@@ -328,6 +328,100 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 		}),
 )
 
+var _ = Describe("Primary User Defined Network attachment", func() {
+	var (
+		failureCount = 0
+		namespace    string
+	)
+
+	JustAfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			failureCount++
+			logFailure(failureCount, namespace)
+		}
+	})
+
+	PWhen("the VM is created with a user defined MAC and IP addresses", func() {
+		const (
+			userDefinedIP  = "10.100.200.100"
+			userDefinedMAC = "02:03:04:05:06:07"
+		)
+
+		var (
+			vm  *kubevirtv1.VirtualMachine
+			vmi *kubevirtv1.VirtualMachineInstance
+			td  testenv.TestData
+		)
+
+		BeforeEach(func() {
+			td = testenv.GenerateTestData()
+			namespace = td.Namespace
+			td.SetUp(primaryUDNNamespaceLabels())
+			DeferCleanup(func() {
+				td.TearDown()
+			})
+
+			// TODO: delete the code block below once OVN-Kubernetes provisions
+			// the default network NAD
+			const ovnKubernetesNamespace = "ovn-kubernetes"
+			By("Ensuring the cluster default network attachment NetworkAttachmentDefinition exists")
+			Expect(ensureDefaultNetworkAttachmentNAD(ovnKubernetesNamespace)).To(Succeed())
+			// END code to be deleted block
+
+			nad := testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, rolePrimary)
+			By("Create NetworkAttachmentDefinition")
+			Expect(testenv.Client.Create(context.Background(), nad)).To(Succeed())
+
+			vmi = vmiWithManagedTap(td.Namespace)
+			vm = testenv.NewVirtualMachine(
+				vmi,
+				testenv.WithRunning(),
+				testenv.WithMACAddress(primaryLogicalNetworkInterfaceName, userDefinedMAC),
+				testenv.WithStaticIPRequests(primaryLogicalNetworkInterfaceName, userDefinedIP),
+			)
+			Expect(testenv.Client.Create(context.Background(), vm)).To(Succeed())
+
+			By(fmt.Sprintf("Waiting for readiness at virtual machine %s", vm.Name))
+			Eventually(testenv.ThisVMReadiness(vm)).
+				WithPolling(time.Second).
+				WithTimeout(5 * time.Minute).
+				Should(BeTrue())
+
+			By("Wait for IPAMClaim to get created")
+			Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
+				WithTimeout(time.Minute).
+				WithPolling(time.Second).
+				ShouldNot(BeEmpty())
+		})
+
+		It("should have the user provided MAC and IP addresses after creation", func() {
+			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(
+				primaryLogicalNetworkInterfaceName,
+				ConsistOf(userDefinedIP),
+			))
+			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchMACAddressAtInterfaceByName(
+				primaryLogicalNetworkInterfaceName,
+				userDefinedMAC,
+			))
+		})
+
+		It("should keep the user provided MAC and IP addresses after live migration", func() {
+			testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
+			testenv.CheckLiveMigrationSucceeded(td.Namespace, vm.Name)
+
+			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(
+				primaryLogicalNetworkInterfaceName,
+				ConsistOf(userDefinedIP),
+			))
+			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchMACAddressAtInterfaceByName(
+				primaryLogicalNetworkInterfaceName,
+				userDefinedMAC,
+			))
+		})
+	})
+
+})
+
 func foregroundDeleteOptions() *client.DeleteOptions {
 	foreground := metav1.DeletePropagationForeground
 	return &client.DeleteOptions{
@@ -393,4 +487,44 @@ ethernets:
 		}),
 		testenv.WithCloudInitNoCloudVolume(cloudInitNetworkData),
 	)
+}
+
+func logFailure(failureCount int, namespace string) {
+	By(fmt.Sprintf("Test failed, collecting logs and artifacts, failure count %d, process %d", failureCount, GinkgoParallelProcess()))
+
+	logCommand([]string{"get", "pods", "-A"}, "pods", failureCount)
+	logCommand([]string{"get", "vm", "-A", "-oyaml"}, "vms", failureCount)
+	logCommand([]string{"get", "vmi", "-A", "-oyaml"}, "vmis", failureCount)
+	logCommand([]string{"get", "ipamclaims", "-A", "-oyaml"}, "ipamclaims", failureCount)
+	logCommand([]string{"get", "net-attach-def", "-A", "-oyaml"}, "network-attachments", failureCount)
+	logCommand([]string{"get", "namespaces", "-A", "-oyaml"}, "namespaces", failureCount)
+	logCommand([]string{"get", "pods", "-n", namespace, "-oyaml"}, "pods-on-test-namespace", failureCount)
+	logOvnPods(failureCount)
+}
+
+func primaryUDNNamespaceLabels() map[string]string {
+	return map[string]string{
+		"k8s.ovn.org/primary-user-defined-network": "",
+	}
+}
+
+func ensureDefaultNetworkAttachmentNAD(namespace string) error {
+	defaultNetNad := &nadv1.NetworkAttachmentDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: namespace,
+		},
+		Spec: nadv1.NetworkAttachmentDefinitionSpec{
+			Config: "{\"cniVersion\": \"0.4.0\", \"name\": \"default\", \"type\": \"ovn-k8s-cni-overlay\"}",
+		},
+	}
+
+	if err := testenv.Client.Create(
+		context.Background(),
+		defaultNetNad,
+	); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+
+	return nil
 }
