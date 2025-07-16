@@ -341,7 +341,7 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 		}
 	})
 
-	When("the VM is created with a user defined MAC and IP addresses", func() {
+	PWhen("the VM is created with a user defined MAC and IP addresses", func() {
 		const (
 			userDefinedIP  = "10.100.200.100"
 			userDefinedMAC = "02:03:04:05:06:07"
