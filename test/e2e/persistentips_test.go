@@ -156,7 +156,7 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				BeforeEach(func() {
 					By("Invoking virtctl stop")
 					output, err := exec.Command("virtctl", "stop", "-n", td.Namespace, vmi.Name).CombinedOutput()
-					Expect(err).NotTo(HaveOccurred(), output)
+					Expect(err).NotTo(HaveOccurred(), string(output))
 
 					By("Ensuring VM is not running")
 					Eventually(testenv.ThisVMI(vmi), 360*time.Second, 1*time.Second).Should(
@@ -198,7 +198,7 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 
 				By("Re-starting the VM")
 				output, err := exec.Command("virtctl", "restart", "-n", td.Namespace, vmi.Name).CombinedOutput()
-				Expect(err).NotTo(HaveOccurred(), output)
+				Expect(err).NotTo(HaveOccurred(), string(output))
 
 				By("Wait for a new VMI to be re-started")
 				Eventually(testenv.ThisVMI(vmi)).
