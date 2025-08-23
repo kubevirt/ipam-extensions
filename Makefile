@@ -72,9 +72,9 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e: ginkgo
+test-e2e: ginkgo virtctl
 	export KUBECONFIG=${KUBECONFIG} && \
-	export PATH=$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
+	export PATH=$$(pwd)/bin:$$(pwd)/.output/ovn-kubernetes/bin:$${PATH} && \
 	export REPORT_PATH=$$(pwd)/.output/ && \
 	cd test/e2e && \
 	$(GINKGO) -p -v --timeout=${E2E_TEST_TIMEOUT} --junit-report=$${REPORT_PATH}/test-e2e.junit.xml ${E2E_TEST_ARGS}
@@ -164,6 +164,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
 ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 GINKGO = $(LOCALBIN)/ginkgo-$(GINKGO_VERSION)
+VIRTCTL = $(LOCALBIN)/virtctl
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
@@ -195,6 +196,14 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 .PHONY: ginkgo
 ginkgo:
 	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,${GINKGO_VERSION})
+
+.PHONY: virtctl
+virtctl: $(VIRTCTL) ## Download virtctl locally if necessary.
+$(VIRTCTL): $(LOCALBIN)
+	@echo "Installing virtctl..."
+	@export VERSION=$$(curl -s https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt) && \
+	wget -q https://github.com/kubevirt/kubevirt/releases/download/$${VERSION}/virtctl-$${VERSION}-linux-amd64 -O $(VIRTCTL) && \
+	chmod +x $(VIRTCTL)
 
 .PHONY: cluster-up
 cluster-up:
