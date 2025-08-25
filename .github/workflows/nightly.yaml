@@ -1,0 +1,84 @@
+name: Nightly E2E Tests
+on:
+  schedule:
+    # Run every night at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  nightly-e2e:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Free up disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android/sdk
+        sudo apt-get update
+        sudo eatmydata apt-get purge --auto-remove -y \
+          azure-cli aspnetcore-* dotnet-* ghc-* firefox \
+          google-chrome-stable \
+          llvm-* microsoft-edge-stable mono-* \
+          mysql-server-core-* php-* php7* \
+          powershell temurin-* zulu-*
+
+    - name: Start cluster
+      env:
+        KIND_ALLOW_SYSTEM_WRITES: true
+      run: make cluster-up
+
+    - name: Sync cluster
+      run: make cluster-sync
+
+    - name: Run e2e tests
+      run: make test-e2e
+
+    - uses: actions/upload-artifact@v4  # upload test results
+      if: success() || failure()        # run this step even if previous step failed
+      with:
+        name: nightly-test-e2e-results-${{ github.run_number }}
+        path: .output/*.xml
+
+    - name: Upload logs as artifacts
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: nightly-test-logs-${{ github.run_number }}
+        path: ./test/e2e/_output/*.log
+
+  # Add a notification job for failures
+  notify-on-failure:
+    needs: nightly-e2e
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+    - name: Create Issue on Failure
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `Nightly E2E Tests Failed - ${new Date().toISOString().split('T')[0]}`;
+          const body = `
+          ## Nightly E2E Test Failure
+          
+          **Run**: ${{ github.run_id }}
+          **Date**: ${new Date().toISOString()}
+          **Workflow**: ${{ github.workflow }}
+          
+          The nightly e2e tests have failed. Please investigate.
+          
+          [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          `;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['nightly-failure', 'bug']
+          });
