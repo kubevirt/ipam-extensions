@@ -30,7 +30,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -362,13 +361,6 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 				td.TearDown()
 			})
 
-			// TODO: delete the code block below once OVN-Kubernetes provisions
-			// the default network NAD
-			const ovnKubernetesNamespace = "ovn-kubernetes"
-			By("Ensuring the cluster default network attachment NetworkAttachmentDefinition exists")
-			Expect(ensureDefaultNetworkAttachmentNAD(ovnKubernetesNamespace)).To(Succeed())
-			// END code to be deleted block
-
 			nad := testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, rolePrimary)
 			By("Create NetworkAttachmentDefinition")
 			Expect(testenv.Client.Create(context.Background(), nad)).To(Succeed())
@@ -451,13 +443,6 @@ var _ = Describe("Webhook validation for default-network annotation", func() {
 			DeferCleanup(func() {
 				td.TearDown()
 			})
-
-			// TODO: delete the code block below once OVN-Kubernetes provisions
-			// the default network NAD
-			const ovnKubernetesNamespace = "ovn-kubernetes"
-			By("Ensuring the cluster default network attachment NetworkAttachmentDefinition exists")
-			Expect(ensureDefaultNetworkAttachmentNAD(ovnKubernetesNamespace)).To(Succeed())
-			// END code to be deleted block
 
 			nad = testenv.GenerateLayer2WithSubnetNAD(nadName, td.Namespace, rolePrimary)
 			By("Create NetworkAttachmentDefinition")
@@ -585,25 +570,4 @@ func primaryUDNNamespaceLabels() map[string]string {
 	return map[string]string{
 		"k8s.ovn.org/primary-user-defined-network": "",
 	}
-}
-
-func ensureDefaultNetworkAttachmentNAD(namespace string) error {
-	defaultNetNad := &nadv1.NetworkAttachmentDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
-			Namespace: namespace,
-		},
-		Spec: nadv1.NetworkAttachmentDefinitionSpec{
-			Config: "{\"cniVersion\": \"0.4.0\", \"name\": \"default\", \"type\": \"ovn-k8s-cni-overlay\"}",
-		},
-	}
-
-	if err := testenv.Client.Create(
-		context.Background(),
-		defaultNetNad,
-	); err != nil && !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-
-	return nil
 }
