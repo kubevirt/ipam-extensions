@@ -98,7 +98,7 @@ github.com/json-iterator/go
 # github.com/k8snetworkplumbingwg/ipamclaims v0.5.0-alpha
 ## explicit; go 1.23.0
 github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1
-# github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.5
+# github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 ## explicit; go 1.21
 github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io
 github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1

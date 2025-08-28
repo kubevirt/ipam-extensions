@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/go-logr/logr v1.4.2
 	github.com/k8snetworkplumbingwg/ipamclaims v0.5.0-alpha
-	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.5
+	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	gomodules.xyz/jsonpatch/v2 v2.4.0
