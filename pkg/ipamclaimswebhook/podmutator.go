@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -145,6 +146,13 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		}
 
 		if primaryUDNInterface != nil {
+			if err := validateDefaultMultusNetworkRequest(pod, request.Operation); err != nil {
+				if isValidationError(err) {
+					return admission.Denied(err.Error())
+				}
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
+
 			if newPod == nil {
 				newPod = pod.DeepCopy()
 			}
@@ -188,6 +196,33 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	}
 
 	return admission.Allowed("carry on")
+}
+
+// ValidationError represents a validation failure (should result in admission.Denied)
+type ValidationError struct {
+	Message string
+}
+
+func (e ValidationError) Error() string {
+	return e.Message
+}
+
+// isValidationError checks if the error is a ValidationError
+func isValidationError(err error) bool {
+	var validationErr ValidationError
+	return errors.As(err, &validationErr)
+}
+
+func validateDefaultMultusNetworkRequest(pod *corev1.Pod, operation admissionv1.Operation) error {
+	if _, exists := pod.Annotations[config.MultusDefaultNetAnnotation]; operation == admissionv1.Create && exists {
+		return ValidationError{
+			Message: fmt.Sprintf(
+				"multus default network annotation %q is not allowed on pod creation",
+				config.MultusDefaultNetAnnotation,
+			),
+		}
+	}
+	return nil
 }
 
 // returns the names of the kubevirt VM networks indexed by their NAD name
