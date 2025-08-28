@@ -325,7 +325,7 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			},
 		}),
-		Entry("launcher pod with existing default-network multus annotation pointing to the non-udn interface", testConfig{
+		Entry("launcher pod with existing default-network multus annotation is denied on creation", testConfig{
 			inputVM:  dummyVM(nadName),
 			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
@@ -336,14 +336,14 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionResponse: admissionv1.AdmissionResponse{
 				Allowed: false,
 				Result: &metav1.Status{
-					Message: "multus default network is only allowed on the primary UDN interface \"podnet\", " +
-						"but was requested on interface \"not-podnet\"",
-					Reason: metav1.StatusReasonForbidden,
-					Code:   http.StatusForbidden,
+					Message: "multus default network annotation \"v1.multus-cni.io/default-network\" is not allowed on pod creation",
+					Reason:  metav1.StatusReasonForbidden,
+					Code:    http.StatusForbidden,
 				},
 			},
 		}),
-		Entry("launcher pod with existing default-network multus annotation pointing to the correct primary UDN interface",
+		Entry("launcher pod with existing default-network multus annotation is denied on creation "+
+			"even if annotation value is correct",
 			testConfig{
 				inputVM:  dummyVM(nadName),
 				inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
@@ -353,24 +353,48 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				inputPod: dummyPodForVMWithAnnotation("" /*without network selection element*/, vmName,
 					map[string]string{config.MultusDefaultNetAnnotation: "[{\"name\":\"podnet\"}]"}),
 				expectedAdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed:   true,
-					PatchType: &patchType,
+					Allowed: false,
+					Result: &metav1.Status{
+						Message: "multus default network annotation \"v1.multus-cni.io/default-network\" is not allowed on pod creation",
+						Reason:  metav1.StatusReasonForbidden,
+						Code:    http.StatusForbidden,
+					},
 				},
-				expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
-					{
-						Operation: "add",
-						Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-						Value:     "vm1.podnet",
-					},
-					{
-						Operation: "replace",
-						Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
-						Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
-							"\"ips\":[\"192.168.1.10/16\",\"fd20:1234::200/64\"],\"ipam-claim-reference\":\"vm1.podnet\"}]",
-					},
-				}),
 			}),
 	)
+
+	It("should allow UPDATE operations even with multus default network annotation", func() {
+		var initialObjects []client.Object
+
+		vm := dummyVM(nadName)
+		vmi := dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200"))
+		nad := dummyPrimaryNetworkNAD(nadName)
+		pod := dummyPodForVMWithAnnotation("", vmName,
+			map[string]string{config.MultusDefaultNetAnnotation: "[{\"name\":\"podnet\"}]"})
+
+		initialObjects = append(initialObjects, vm, vmi, nad)
+
+		ctrlOptions := controllerruntime.Options{
+			Scheme: scheme.Scheme,
+			NewClient: func(_ *rest.Config, _ client.Options) (client.Client, error) {
+				return fake.NewClientBuilder().
+					WithScheme(scheme.Scheme).
+					WithObjects(initialObjects...).
+					Build(), nil
+			},
+		}
+
+		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
+		Expect(err).NotTo(HaveOccurred())
+
+		ipamClaimsManager := NewIPAMClaimsValet(mgr, WithDefaultNetNADNamespace(namespaceName))
+
+		updateRequest := podAdmissionRequestWithOperation(pod, admissionv1.Update)
+		result := ipamClaimsManager.Handle(context.Background(), updateRequest)
+
+		Expect(result.AdmissionResponse.Allowed).To(BeTrue())
+		Expect(result.PatchType).To(Equal(&patchType))
+	})
 })
 
 func dummyVM(nadName string) *virtv1.VirtualMachine {
@@ -464,6 +488,10 @@ func dummyNADWithoutPersistentIPs(nadName string) *nadv1.NetworkAttachmentDefini
 }
 
 func podAdmissionRequest(pod *corev1.Pod) admission.Request {
+	return podAdmissionRequestWithOperation(pod, admissionv1.Create)
+}
+
+func podAdmissionRequestWithOperation(pod *corev1.Pod, operation admissionv1.Operation) admission.Request {
 	rawPod, err := json.Marshal(pod)
 	if err != nil {
 		return admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{Object: runtime.RawExtension{}}}
@@ -473,6 +501,7 @@ func podAdmissionRequest(pod *corev1.Pod) admission.Request {
 			Object: runtime.RawExtension{
 				Raw: rawPod,
 			},
+			Operation: operation,
 		},
 	}
 }

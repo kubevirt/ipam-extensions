@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -138,15 +139,18 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 			"primary network attachment found",
 			"network", primaryNetwork.Name,
 		)
-
 		primaryUDNInterface, err := findPrimaryUDNInterface(ctx, vmi, primaryNetwork)
 		if err != nil {
 			return admission.Errored(http.StatusInternalServerError,
 				fmt.Errorf("failed looking for primary user defined IPAMClaim name: %v", err))
 		}
+
 		if primaryUDNInterface != nil {
-			if err = validateDefaultMultusNetworkRequest(pod, primaryUDNInterface.Name); err != nil {
-				return admission.Denied(err.Error())
+			if err := validateDefaultMultusNetworkRequest(pod, request.Operation); err != nil {
+				if isValidationError(err) {
+					return admission.Denied(err.Error())
+				}
+				return admission.Errored(http.StatusInternalServerError, err)
 			}
 
 			if newPod == nil {
@@ -194,22 +198,29 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	return admission.Allowed("carry on")
 }
 
-func validateDefaultMultusNetworkRequest(pod *corev1.Pod, primaryUDNInterfaceName string) error {
-	annotationValue, exists := pod.Annotations[config.MultusDefaultNetAnnotation]
-	if !exists {
-		return nil
-	}
+// ValidationError represents a validation failure (should result in admission.Denied)
+type ValidationError struct {
+	Message string
+}
 
-	defaultNet, err := udn.GetK8sPodDefaultNetworkSelection(annotationValue, pod.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to parse default network annotation: %v", err)
-	}
+func (e ValidationError) Error() string {
+	return e.Message
+}
 
-	if defaultNet != nil && defaultNet.Name != primaryUDNInterfaceName {
-		return fmt.Errorf(
-			"multus default network is only allowed on the primary UDN interface %q, but was requested on interface %q",
-			primaryUDNInterfaceName, defaultNet.Name,
-		)
+// isValidationError checks if the error is a ValidationError
+func isValidationError(err error) bool {
+	var validationErr ValidationError
+	return errors.As(err, &validationErr)
+}
+
+func validateDefaultMultusNetworkRequest(pod *corev1.Pod, operation admissionv1.Operation) error {
+	if _, exists := pod.Annotations[config.MultusDefaultNetAnnotation]; operation == admissionv1.Create && exists {
+		return ValidationError{
+			Message: fmt.Sprintf(
+				"multus default network annotation %q is not allowed on pod creation",
+				config.MultusDefaultNetAnnotation,
+			),
+		}
 	}
 	return nil
 }
