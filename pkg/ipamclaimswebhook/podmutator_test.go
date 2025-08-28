@@ -325,51 +325,6 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			},
 		}),
-		Entry("launcher pod with existing default-network multus annotation pointing to the non-udn interface", testConfig{
-			inputVM:  dummyVM(nadName),
-			inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
-			inputNADs: []*nadv1.NetworkAttachmentDefinition{
-				dummyPrimaryNetworkNAD(nadName),
-			},
-			inputPod: dummyPodForVMWithAnnotation("" /*without network selection element*/, vmName,
-				map[string]string{config.MultusDefaultNetAnnotation: "[{\"name\":\"not-podnet\"}]"}),
-			expectedAdmissionResponse: admissionv1.AdmissionResponse{
-				Allowed: false,
-				Result: &metav1.Status{
-					Message: "multus default network is only allowed on the primary UDN interface \"podnet\", " +
-						"but was requested on interface \"not-podnet\"",
-					Reason: metav1.StatusReasonForbidden,
-					Code:   http.StatusForbidden,
-				},
-			},
-		}),
-		Entry("launcher pod with existing default-network multus annotation pointing to the correct primary UDN interface",
-			testConfig{
-				inputVM:  dummyVM(nadName),
-				inputVMI: dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200")),
-				inputNADs: []*nadv1.NetworkAttachmentDefinition{
-					dummyPrimaryNetworkNAD(nadName),
-				},
-				inputPod: dummyPodForVMWithAnnotation("" /*without network selection element*/, vmName,
-					map[string]string{config.MultusDefaultNetAnnotation: "[{\"name\":\"podnet\"}]"}),
-				expectedAdmissionResponse: admissionv1.AdmissionResponse{
-					Allowed:   true,
-					PatchType: &patchType,
-				},
-				expectedAdmissionPatches: ConsistOf([]jsonpatch.JsonPatchOperation{
-					{
-						Operation: "add",
-						Path:      "/metadata/annotations/k8s.ovn.org~1primary-udn-ipamclaim",
-						Value:     "vm1.podnet",
-					},
-					{
-						Operation: "replace",
-						Path:      "/metadata/annotations/v1.multus-cni.io~1default-network",
-						Value: "[{\"name\":\"default\",\"namespace\":\"randomNS\"," +
-							"\"ips\":[\"192.168.1.10/16\",\"fd20:1234::200/64\"],\"ipam-claim-reference\":\"vm1.podnet\"}]",
-					},
-				}),
-			}),
 	)
 })
 
@@ -481,11 +436,6 @@ func dummyPodForVM(nadName string, vmName string) *corev1.Pod {
 	return pod(nadName, map[string]string{
 		"kubevirt.io/domain": vmName,
 	})
-}
-
-func dummyPodForVMWithAnnotation(nadName string, vmName string, annotations map[string]string) *corev1.Pod {
-	annotations["kubevirt.io/domain"] = vmName
-	return pod(nadName, annotations)
 }
 
 func dummyPod(nadName string) *corev1.Pod {

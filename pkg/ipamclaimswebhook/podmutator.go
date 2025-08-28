@@ -138,17 +138,13 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 			"primary network attachment found",
 			"network", primaryNetwork.Name,
 		)
-
 		primaryUDNInterface, err := findPrimaryUDNInterface(ctx, vmi, primaryNetwork)
 		if err != nil {
 			return admission.Errored(http.StatusInternalServerError,
 				fmt.Errorf("failed looking for primary user defined IPAMClaim name: %v", err))
 		}
-		if primaryUDNInterface != nil {
-			if err = validateDefaultMultusNetworkRequest(pod, primaryUDNInterface.Name); err != nil {
-				return admission.Denied(err.Error())
-			}
 
+		if primaryUDNInterface != nil {
 			if newPod == nil {
 				newPod = pod.DeepCopy()
 			}
@@ -192,26 +188,6 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	}
 
 	return admission.Allowed("carry on")
-}
-
-func validateDefaultMultusNetworkRequest(pod *corev1.Pod, primaryUDNInterfaceName string) error {
-	annotationValue, exists := pod.Annotations[config.MultusDefaultNetAnnotation]
-	if !exists {
-		return nil
-	}
-
-	defaultNet, err := udn.GetK8sPodDefaultNetworkSelection(annotationValue, pod.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to parse default network annotation: %v", err)
-	}
-
-	if defaultNet != nil && defaultNet.Name != primaryUDNInterfaceName {
-		return fmt.Errorf(
-			"multus default network is only allowed on the primary UDN interface %q, but was requested on interface %q",
-			primaryUDNInterfaceName, defaultNet.Name,
-		)
-	}
-	return nil
 }
 
 // returns the names of the kubevirt VM networks indexed by their NAD name
