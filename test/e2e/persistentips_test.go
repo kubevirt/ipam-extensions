@@ -428,7 +428,7 @@ var _ = Describe("Webhook validation for default-network annotation", func() {
 		}
 	})
 
-	When("launcher pod has default-network multus annotation pointing to wrong interface", func() {
+	When("launcher pod has default-network multus annotation", func() {
 		var (
 			td  testenv.TestData
 			vm  *kubevirtv1.VirtualMachine
@@ -451,15 +451,15 @@ var _ = Describe("Webhook validation for default-network annotation", func() {
 			vmi = vmiWithManagedTap(td.Namespace)
 			vm = testenv.NewVirtualMachine(vmi, testenv.WithRunning())
 
-			By("Adding wrong default-network annotation that should cause webhook rejection")
+			By("Adding default-network annotation that should cause webhook rejection")
 			if vm.Spec.Template.ObjectMeta.Annotations == nil {
 				vm.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
 			}
-			vm.Spec.Template.ObjectMeta.Annotations["v1.multus-cni.io/default-network"] = `[{"name":"wrong_interface"}]`
+			vm.Spec.Template.ObjectMeta.Annotations["v1.multus-cni.io/default-network"] = `[{"name":"any_interface"}]`
 		})
 
 		It("should reject VM Pod creation", func() {
-			By("Creating VM with wrong default-network annotation")
+			By("Creating VM with default-network annotation")
 			err := testenv.Client.Create(context.Background(), vm)
 			Expect(err).NotTo(HaveOccurred(), "VM creation should succeed")
 
@@ -477,7 +477,7 @@ var _ = Describe("Webhook validation for default-network annotation", func() {
 					HaveField("Type", "Warning"),
 					HaveField("Reason", "FailedCreate"),
 					HaveField("InvolvedObject.Kind", "VirtualMachineInstance"),
-					HaveField("Message", ContainSubstring(`multus default network is only allowed on the primary UDN interface "pod_iface", but was requested on interface "wrong_interface"`)),
+					HaveField("Message", ContainSubstring(`multus default network annotation "v1.multus-cni.io/default-network" is not allowed on pod creation`)),
 				)), "Should find webhook rejection event for VMI pod creation failure")
 
 			By("Verifying the VM has not started due to pod creation failure")
