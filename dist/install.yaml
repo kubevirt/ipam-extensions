@@ -207,7 +207,7 @@ metadata:
   name: kubevirt-ipam-controller-manager
   namespace: kubevirt-ipam-controller-system
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ipam-virt-workloads
