@@ -103,7 +103,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
-	export KUBEVIRT_VERSION=$$(curl -sSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt) && \
+	export KUBEVIRT_VERSION=v1.5.3 && \
 	$(CONTAINER_TOOL) build --build-arg KUBEVIRT_VERSION=$${KUBEVIRT_VERSION} -f passt/Dockerfile -t ${PASST_IMG} .
 
 .PHONY: docker-push
