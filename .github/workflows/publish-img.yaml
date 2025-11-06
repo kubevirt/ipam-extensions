@@ -51,7 +51,7 @@ jobs:
 
       - name: Fetch KubeVirt Release
         run: |
-          KUBEVIRT_VERSION=$(curl -sSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
+          KUBEVIRT_VERSION=v1.5.3
           echo "KUBEVIRT_VERSION=${KUBEVIRT_VERSION}" >> $GITHUB_ENV
 
       - name: Push branch-based container images
