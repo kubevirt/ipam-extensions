@@ -100,3 +100,12 @@ func ContainConditionVMIReady() gomegatypes.GomegaMatcher {
 			HaveField("Status", corev1.ConditionTrue),
 		)))
 }
+
+// BeReadyWithIPsAtInterface checks that the VMI is ready AND has IPs assigned at the specified interface.
+// This is a composite matcher that combines readiness and IP assignment verification.
+func BeReadyWithIPsAtInterface(interfaceName string, ipsMatcher gomegatypes.GomegaMatcher) gomegatypes.GomegaMatcher {
+	return SatisfyAll(
+		ContainConditionVMIReady(),
+		MatchIPsAtInterfaceByName(interfaceName, ipsMatcher),
+	)
+}
