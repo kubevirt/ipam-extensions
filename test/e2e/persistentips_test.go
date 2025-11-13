@@ -104,19 +104,17 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				By("Creating VM with secondary attachments")
 				Expect(testenv.Client.Create(context.Background(), vm)).To(Succeed())
 
-				By(fmt.Sprintf("Waiting for readiness at virtual machine %s", vm.Name))
-				Eventually(testenv.ThisVMReadiness(vm)).
-					WithPolling(time.Second).
-					WithTimeout(5 * time.Minute).
-					Should(BeTrue())
-
 				By("Wait for IPAMClaim to get created")
 				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
 					WithTimeout(time.Minute).
 					WithPolling(time.Second).
 					ShouldNot(BeEmpty())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, Not(BeEmpty())))
+				By(fmt.Sprintf("Wait for VMI %s to be ready with IPs assigned", vmi.Name))
+				Eventually(testenv.ThisVMI(vmi)).
+					WithPolling(time.Second).
+					WithTimeout(5 * time.Minute).
+					Should(testenv.BeReadyWithIPsAtInterface(params.networkInterfaceName, Not(BeEmpty())))
 			})
 
 			It("should keep ips after live migration", func() {
@@ -127,13 +125,11 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vm.Name)
 
-				By("Wait for VMI to be ready after live migration")
+				By("Wait for VMI to be ready with IPs after live migration")
 				Eventually(testenv.ThisVMI(vmi)).
 					WithPolling(time.Second).
 					WithTimeout(5 * time.Minute).
-					Should(testenv.ContainConditionVMIReady())
-
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
+					Should(testenv.BeReadyWithIPsAtInterface(params.networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
 			})
 
 			It("should garbage collect IPAMClaims after VM deletion", func() {
@@ -206,13 +202,11 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 					WithTimeout(90 * time.Second).
 					Should(testenv.BeRestarted(vmiUUIDBeforeRestart))
 
-				By("Wait for VMI to be ready after restart")
+				By("Wait for VMI to be ready with IPs after restart")
 				Eventually(testenv.ThisVMI(vmi)).
 					WithPolling(time.Second).
 					WithTimeout(5 * time.Minute).
-					Should(testenv.ContainConditionVMIReady())
-
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, ConsistOf(vmiIPsBeforeRestart)))
+					Should(testenv.BeReadyWithIPsAtInterface(params.networkInterfaceName, ConsistOf(vmiIPsBeforeRestart)))
 			})
 		})
 
@@ -269,19 +263,17 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				By("Creating VMI using the nad")
 				Expect(testenv.Client.Create(context.Background(), vmi)).To(Succeed())
 
-				By(fmt.Sprintf("Waiting for readiness at virtual machine instance %s", vmi.Name))
-				Eventually(testenv.ThisVMI(vmi)).
-					WithPolling(time.Second).
-					WithTimeout(5 * time.Minute).
-					Should(testenv.ContainConditionVMIReady())
-
 				By("Wait for IPAMClaim to get created")
 				Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
 					WithTimeout(time.Minute).
 					WithPolling(time.Second).
 					ShouldNot(BeEmpty())
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, Not(BeEmpty())))
+				By(fmt.Sprintf("Waiting for readiness at virtual machine instance %s with IPs assigned", vmi.Name))
+				Eventually(testenv.ThisVMI(vmi)).
+					WithPolling(time.Second).
+					WithTimeout(5 * time.Minute).
+					Should(testenv.BeReadyWithIPsAtInterface(params.networkInterfaceName, Not(BeEmpty())))
 			})
 
 			It("should keep ips after live migration", func() {
@@ -292,7 +284,10 @@ var _ = DescribeTableSubtree("Persistent IPs", func(params testParams) {
 				testenv.LiveMigrateVirtualMachine(td.Namespace, vmi.Name)
 				testenv.CheckLiveMigrationSucceeded(td.Namespace, vmi.Name)
 
-				Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(params.networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
+				Eventually(testenv.ThisVMI(vmi)).
+					WithPolling(time.Second).
+					WithTimeout(5 * time.Minute).
+					Should(testenv.BeReadyWithIPsAtInterface(params.networkInterfaceName, ConsistOf(vmiIPsBeforeMigration)))
 			})
 
 			It("should garbage collect IPAMClaims after VMI deletion", func() {
@@ -374,12 +369,6 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 			)
 			Expect(testenv.Client.Create(context.Background(), vm)).To(Succeed())
 
-			By(fmt.Sprintf("Waiting for readiness at virtual machine %s", vm.Name))
-			Eventually(testenv.ThisVMReadiness(vm)).
-				WithPolling(time.Second).
-				WithTimeout(5 * time.Minute).
-				Should(BeTrue())
-
 			By("Wait for IPAMClaim to get created")
 			Eventually(testenv.IPAMClaimsFromNamespace(vm.Namespace)).
 				WithTimeout(time.Minute).
@@ -388,10 +377,13 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 		})
 
 		It("should have the user provided MAC and IP addresses after creation", func() {
-			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(
-				primaryLogicalNetworkInterfaceName,
-				ConsistOf(userDefinedIP),
-			))
+			Eventually(testenv.ThisVMI(vmi)).
+				WithPolling(time.Second).
+				WithTimeout(5 * time.Minute).
+				Should(testenv.BeReadyWithIPsAtInterface(
+					primaryLogicalNetworkInterfaceName,
+					ConsistOf(userDefinedIP),
+				))
 			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchMACAddressAtInterfaceByName(
 				primaryLogicalNetworkInterfaceName,
 				userDefinedMAC,
@@ -402,10 +394,13 @@ var _ = Describe("Primary User Defined Network attachment", func() {
 			testenv.LiveMigrateVirtualMachine(td.Namespace, vm.Name)
 			testenv.CheckLiveMigrationSucceeded(td.Namespace, vm.Name)
 
-			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchIPsAtInterfaceByName(
-				primaryLogicalNetworkInterfaceName,
-				ConsistOf(userDefinedIP),
-			))
+			Eventually(testenv.ThisVMI(vmi)).
+				WithPolling(time.Second).
+				WithTimeout(5 * time.Minute).
+				Should(testenv.BeReadyWithIPsAtInterface(
+					primaryLogicalNetworkInterfaceName,
+					ConsistOf(userDefinedIP),
+				))
 			Expect(testenv.ThisVMI(vmi)()).Should(testenv.MatchMACAddressAtInterfaceByName(
 				primaryLogicalNetworkInterfaceName,
 				userDefinedMAC,
