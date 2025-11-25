@@ -83,11 +83,11 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	log.Info("webhook handling event")
+	log.V(1).Info("webhook handling event")
 
 	vmName, hasVMAnnotation := pod.Annotations["kubevirt.io/domain"]
 	if !hasVMAnnotation {
-		log.Info(
+		log.V(1).Info(
 			"does not have the kubevirt VM annotation",
 		)
 		return admission.Allowed("not a VM")
@@ -191,7 +191,7 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
 
-		log.Info("new pod annotations", "pod", newPod.Annotations)
+		log.V(1).Info("new pod annotations", "pod", newPod.Annotations)
 		return admission.PatchResponseFromRaw(request.Object.Raw, marshaledPod)
 	}
 
@@ -275,7 +275,7 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
 	hasChangedNetworkSelectionElements := false
 	for i, networkSelectionElement := range networkSelectionElements {
 		nadName := fmt.Sprintf("%s/%s", networkSelectionElement.Namespace, networkSelectionElement.Name)
-		log.Info(
+		log.V(1).Info(
 			"iterating network selection elements",
 			"NAD", nadName,
 		)
@@ -369,7 +369,7 @@ func primaryNetworkConfig(
 ) (*config.RelevantConfig, error) {
 	log := logf.FromContext(ctx)
 
-	log.Info(
+	log.V(1).Info(
 		"Looking for primary network config",
 		"vmi",
 		client.ObjectKeyFromObject(vmi),
@@ -381,7 +381,7 @@ func primaryNetworkConfig(
 	}
 
 	if primaryNetworkNAD == nil {
-		log.Info(
+		log.V(1).Info(
 			"Did not find primary network config",
 			"namespace", vmi.Namespace,
 		)

@@ -225,6 +225,9 @@ spec:
         - --leader-elect
         command:
         - /manager
+        env:
+        - name: LOG_LEVEL
+          value: "0"
         image: ghcr.io/kubevirt/ipam-controller:main
         livenessProbe:
           httpGet:

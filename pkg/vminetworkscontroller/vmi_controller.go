@@ -112,7 +112,7 @@ func (r *VirtualMachineInstanceReconciler) Reconcile(
 				}
 
 				if len(existingIPAMClaim.OwnerReferences) == 1 && existingIPAMClaim.OwnerReferences[0].UID == ownerInfo.UID {
-					r.Log.Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
+					r.Log.V(1).Info("found existing IPAMClaim belonging to this VM/VMI, nothing to do", "UID", ownerInfo.UID)
 					continue
 				} else {
 					err := fmt.Errorf("failed since it found an existing IPAMClaim for %q", claimKey.Name)
