@@ -116,25 +116,25 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		}
 	}
 
-	vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
-	vmi := &virtv1.VirtualMachineInstance{}
-	if err := a.Get(context.Background(), vmKey, vmi); err != nil {
-		return admission.Errored(
-			http.StatusInternalServerError,
-			fmt.Errorf(
-				"failed to access the VMI running in pod %q: %w",
-				types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String(),
-				err,
-			),
-		)
-	}
-
-	primaryNetwork, err := primaryNetworkConfig(a.Client, ctx, vmi)
+	primaryNetwork, err := primaryNetworkConfig(a.Client, ctx, pod.Namespace)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
 	if primaryNetwork != nil {
+		vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
+		vmi := &virtv1.VirtualMachineInstance{}
+		if err := a.Get(context.Background(), vmKey, vmi); err != nil {
+			return admission.Errored(
+				http.StatusInternalServerError,
+				fmt.Errorf(
+					"failed to access the VMI running in pod %q: %w",
+					types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String(),
+					err,
+				),
+			)
+		}
+
 		log.Info(
 			"primary network attachment found",
 			"network", primaryNetwork.Name,
@@ -365,17 +365,15 @@ func findPrimaryUDNInterface(
 func primaryNetworkConfig(
 	cli client.Client,
 	ctx context.Context,
-	vmi *virtv1.VirtualMachineInstance,
+	podNamespace string,
 ) (*config.RelevantConfig, error) {
 	log := logf.FromContext(ctx)
 
-	log.V(1).Info(
-		"Looking for primary network config",
-		"vmi",
-		client.ObjectKeyFromObject(vmi),
+	log.V(1).Info("Looking for primary network config",
+		"namespace", podNamespace,
 	)
 
-	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, vmi.Namespace)
+	primaryNetworkNAD, err := udn.FindPrimaryNetwork(ctx, cli, podNamespace)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +381,7 @@ func primaryNetworkConfig(
 	if primaryNetworkNAD == nil {
 		log.V(1).Info(
 			"Did not find primary network config",
-			"namespace", vmi.Namespace,
+			"namespace", podNamespace,
 		)
 		return nil, nil
 	}
@@ -399,7 +397,7 @@ func primaryNetworkConfig(
 	pluginConfig, err := config.NewConfig(primaryNetworkNAD.Spec.Config)
 	log.Info(
 		"plugin config",
-		"namespace", vmi.Namespace,
+		"namespace", podNamespace,
 		"plugin", pluginConfig,
 	)
 	if err != nil {
