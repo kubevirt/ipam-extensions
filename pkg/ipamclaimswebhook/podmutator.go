@@ -54,14 +54,19 @@ type IPAMClaimsValet struct {
 	client.Client
 	decoder                admission.Decoder
 	defaultNetNADNamespace string
+	// apiReader is a controller-runtime client that interacts with cluster API directly.
+	// It should be used with care: when an object is known to exist but missing from informer cache.
+	// E.g: virt-launcher exist at handle time but VMI not found in cache.
+	apiReader client.Reader
 }
 
 type Option func(*IPAMClaimsValet)
 
 func NewIPAMClaimsValet(manager manager.Manager, opts ...Option) *IPAMClaimsValet {
 	claimsManager := &IPAMClaimsValet{
-		decoder: admission.NewDecoder(manager.GetScheme()),
-		Client:  manager.GetClient(),
+		decoder:   admission.NewDecoder(manager.GetScheme()),
+		Client:    manager.GetClient(),
+		apiReader: manager.GetAPIReader(),
 	}
 	for _, opt := range opts {
 		opt(claimsManager)
@@ -124,7 +129,7 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	if primaryNetwork != nil {
 		vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
 		vmi := &virtv1.VirtualMachineInstance{}
-		if err := a.Get(context.Background(), vmKey, vmi); err != nil {
+		if err := Get(ctx, a.Client, a.apiReader, vmKey, vmi); err != nil {
 			return admission.Errored(
 				http.StatusInternalServerError,
 				fmt.Errorf(
