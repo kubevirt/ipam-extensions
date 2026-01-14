@@ -124,7 +124,7 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 	if primaryNetwork != nil {
 		vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
 		vmi := &virtv1.VirtualMachineInstance{}
-		if err := a.Get(context.Background(), vmKey, vmi); err != nil {
+		if err := getAndRetryOnNotFound(ctx, a.Client, vmKey, vmi); err != nil {
 			return admission.Errored(
 				http.StatusInternalServerError,
 				fmt.Errorf(
