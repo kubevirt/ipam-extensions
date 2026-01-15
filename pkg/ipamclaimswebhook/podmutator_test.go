@@ -96,20 +96,21 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			initialObjects = append(initialObjects, nad)
 		}
 
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(initialObjects...).Build()
 		ctrlOptions := controllerruntime.Options{
 			Scheme: scheme.Scheme,
 			NewClient: func(_ *rest.Config, _ client.Options) (client.Client, error) {
-				return fake.NewClientBuilder().
-					WithScheme(scheme.Scheme).
-					WithObjects(initialObjects...).
-					Build(), nil
+				return fakeClient, nil
 			},
 		}
 
 		mgr, err := controllerruntime.NewManager(&rest.Config{}, ctrlOptions)
 		Expect(err).NotTo(HaveOccurred())
 
-		ipamClaimsManager := NewIPAMClaimsValet(mgr, WithDefaultNetNADNamespace(namespaceName))
+		ipamClaimsManager := NewIPAMClaimsValet(mgr,
+			WithDefaultNetNADNamespace(namespaceName),
+			OverrideAPIReaderClient(fakeClient),
+		)
 
 		result := ipamClaimsManager.Handle(context.Background(), podAdmissionRequest(config.inputPod))
 
@@ -320,8 +321,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionResponse: admissionv1.AdmissionResponse{
 				Allowed: false,
 				Result: &metav1.Status{
-					Message: "virtualmachineinstances.kubevirt.io \"vm1\" not found",
-					Code:    http.StatusInternalServerError,
+					Message: `failed to access the VMI running in pod "ns1/pod1": context deadline exceeded: ` +
+						`virtualmachineinstances.kubevirt.io "vm1" not found`,
+					Code: http.StatusInternalServerError,
 				},
 			},
 		}),

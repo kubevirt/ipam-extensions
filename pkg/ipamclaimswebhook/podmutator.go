@@ -80,6 +80,12 @@ func WithDefaultNetNADNamespace(namespace string) Option {
 	}
 }
 
+func OverrideAPIReaderClient(reader client.Reader) Option {
+	return func(ipamValet *IPAMClaimsValet) {
+		ipamValet.apiReader = reader
+	}
+}
+
 func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request) admission.Response {
 	log := logf.FromContext(ctx)
 
@@ -106,9 +112,26 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		}
 	}
 
+	primaryNetwork, err := primaryNetworkConfig(a.Client, ctx, pod.Namespace)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+
+	vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
+	vmi := &virtv1.VirtualMachineInstance{}
+	if len(networkSelectionElements) > 0 || primaryNetwork != nil {
+		if err := Get(ctx, a.Client, a.apiReader, vmKey, vmi); err != nil {
+			return admission.Errored(http.StatusInternalServerError, fmt.Errorf(
+				"failed to access the VMI running in pod %q: %w",
+				types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String(),
+				err,
+			))
+		}
+	}
+
 	var newPod *corev1.Pod
 	hasChangedNetworkSelectionElements, err :=
-		ensureIPAMClaimRefAtNetworkSelectionElements(ctx, a.Client, pod, vmName, networkSelectionElements)
+		ensureIPAMClaimRefAtNetworkSelectionElements(ctx, a.Client, vmi, networkSelectionElements)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
@@ -121,25 +144,7 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		}
 	}
 
-	primaryNetwork, err := primaryNetworkConfig(a.Client, ctx, pod.Namespace)
-	if err != nil {
-		return admission.Errored(http.StatusInternalServerError, err)
-	}
-
 	if primaryNetwork != nil {
-		vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
-		vmi := &virtv1.VirtualMachineInstance{}
-		if err := Get(ctx, a.Client, a.apiReader, vmKey, vmi); err != nil {
-			return admission.Errored(
-				http.StatusInternalServerError,
-				fmt.Errorf(
-					"failed to access the VMI running in pod %q: %w",
-					types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}.String(),
-					err,
-				),
-			)
-		}
-
 		log.Info(
 			"primary network attachment found",
 			"network", primaryNetwork.Name,
@@ -273,9 +278,12 @@ func updatePodWithOVNPrimaryNetworkIPAMClaimAnnotation(pod *corev1.Pod, ipamClai
 	pod.Annotations[config.OVNPrimaryNetworkIPAMClaimAnnotation] = ipamClaimName
 }
 
-func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
-	cli client.Client, pod *corev1.Pod, vmName string,
-	networkSelectionElements []*v1.NetworkSelectionElement) (changed bool, err error) {
+func ensureIPAMClaimRefAtNetworkSelectionElements(
+	ctx context.Context,
+	cli client.Client,
+	vmi *virtv1.VirtualMachineInstance,
+	networkSelectionElements []*v1.NetworkSelectionElement,
+) (bool, error) {
 	log := logf.FromContext(ctx)
 	hasChangedNetworkSelectionElements := false
 	for i, networkSelectionElement := range networkSelectionElements {
@@ -313,12 +321,6 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
 			"network", pluginConfig.Name,
 		)
 
-		vmKey := types.NamespacedName{Namespace: pod.Namespace, Name: vmName}
-		vmi := &virtv1.VirtualMachineInstance{}
-		if err := cli.Get(context.Background(), vmKey, vmi); err != nil {
-			return false, err
-		}
-
 		vmiNets := vmiSecondaryNetworks(vmi)
 		networkName, foundNetworkName := vmiNets[nadKey.String()]
 		if !foundNetworkName {
@@ -330,7 +332,7 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(ctx context.Context,
 			continue
 		}
 
-		networkSelectionElements[i].IPAMClaimReference = claims.ComposeKey(vmName, networkName)
+		networkSelectionElements[i].IPAMClaimReference = claims.ComposeKey(vmi.Name, networkName)
 		log.Info(
 			"requesting claim",
 			"NAD", nadName,
