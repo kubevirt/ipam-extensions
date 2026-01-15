@@ -312,6 +312,17 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 				},
 			},
 		}),
+		Entry("pod belonging to VM not requesting secondary attachments nor primary user-defined network "+
+			"is accepted", testConfig{
+			inputPod: dummyPodForVM("", vmName),
+			expectedAdmissionResponse: admissionv1.AdmissionResponse{
+				Allowed: true,
+				Result: &metav1.Status{
+					Message: "no mutation required",
+					Code:    http.StatusOK,
+				},
+			},
+		}),
 		Entry("launcher pod whose VMI is not found throws a server error", testConfig{
 			inputNADs: []*nadv1.NetworkAttachmentDefinition{
 				dummyNAD(nadName),
@@ -320,8 +331,9 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 			expectedAdmissionResponse: admissionv1.AdmissionResponse{
 				Allowed: false,
 				Result: &metav1.Status{
-					Message: "virtualmachineinstances.kubevirt.io \"vm1\" not found",
-					Code:    http.StatusInternalServerError,
+					Message: `failed to access the VMI running in pod "ns1/pod1": ` +
+						`virtualmachineinstances.kubevirt.io "vm1" not found`,
+					Code: http.StatusInternalServerError,
 				},
 			},
 		}),
