@@ -127,9 +127,7 @@ func (a *IPAMClaimsValet) Handle(ctx context.Context, request admission.Request)
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 	if hasChangedNetworkSelectionElements {
-		if newPod == nil {
-			newPod = pod.DeepCopy()
-		}
+		newPod = pod.DeepCopy()
 		if err := updatePodSelectionElements(newPod, networkSelectionElements); err != nil {
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
