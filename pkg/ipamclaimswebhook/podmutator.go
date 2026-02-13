@@ -276,6 +276,7 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(
 	networkSelectionElements []*v1.NetworkSelectionElement,
 ) (bool, error) {
 	log := logf.FromContext(ctx)
+	vmiSpecNetworks := vmiSecondaryNetworks(vmi)
 	hasChangedNetworkSelectionElements := false
 	for i, networkSelectionElement := range networkSelectionElements {
 		nadName := fmt.Sprintf("%s/%s", networkSelectionElement.Namespace, networkSelectionElement.Name)
@@ -312,8 +313,7 @@ func ensureIPAMClaimRefAtNetworkSelectionElements(
 			"network", pluginConfig.Name,
 		)
 
-		vmiNets := vmiSecondaryNetworks(vmi)
-		networkName, foundNetworkName := vmiNets[nadKey.String()]
+		networkName, foundNetworkName := vmiSpecNetworks[nadKey.String()]
 		if !foundNetworkName {
 			log.Info(
 				"network name not found",
