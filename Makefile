@@ -85,13 +85,13 @@ test-e2e: ginkgo virtctl
 	cd test/e2e && \
 	$(GINKGO) -p -v --timeout=${E2E_TEST_TIMEOUT} --junit-report=$${REPORT_PATH}/test-e2e.junit.xml ${E2E_TEST_ARGS}
 
+golangci_lint_args = --timeout 10m --verbose
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter & yamllint
-	$(GOLANGCI_LINT) run
-
+lint: golangci-lint ## Run golangci-lint linter
+	$(GOLANGCI_LINT) run $(golangci_lint_args)
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	$(GOLANGCI_LINT) run --fix
+	$(GOLANGCI_LINT) run --fix $(golangci_lint_args)
 
 ##@ Build
 
