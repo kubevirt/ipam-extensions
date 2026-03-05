@@ -33,7 +33,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-
 	klog "k8s.io/klog/v2"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -47,6 +46,7 @@ import (
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
+	"github.com/kubevirt/ipam-extensions/pkg/config"
 	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
 	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
 	"github.com/kubevirt/ipam-extensions/pkg/vmnetworkscontroller"
@@ -72,25 +72,27 @@ func main() {
 	var enableHTTP2 bool
 	var certDir string
 	var defaultNetworkNadNamespace string
+	var tlsMinVersionRaw string
+	var tlsCipherSuitesRaw string
+	var tlsCurvePreferencesRaw string
 
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. "+
+		"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(
-		&certDir,
-		"certificates-dir",
-		"",
-		"Specify the certificates directory for the webhook server",
-	)
-	flag.StringVar(
-		&defaultNetworkNadNamespace,
-		"default-network-nad-namespace",
-		"ovn-kubernetes",
-		"Define the namespace where the NAD to override the default network is located",
-	)
+	flag.StringVar(&certDir, "certificates-dir", "", "Specify the certificates directory for the webhook server")
+	flag.StringVar(&defaultNetworkNadNamespace, "default-network-nad-namespace", "ovn-kubernetes",
+		"Define the namespace where the NAD to override the default network is located")
+	flag.StringVar(&tlsMinVersionRaw, "tls-min-version", "", "Minimum TLS version. "+
+		"Supported values are tls package constants names (e.g. VersionTLS13), please see "+
+		"https://pkg.go.dev/crypto/tls#pkg-constants")
+	flag.StringVar(&tlsCipherSuitesRaw, "tls-cipher-suites", "",
+		"Comma-separated list of TLS cipher suite names (OpenSSL names. E.g: TLS_AES_128_GCM_SHA256).")
+	flag.StringVar(&tlsCurvePreferencesRaw, "tls-curve-preferences", "",
+		"Comma-separated list of TLS curve preference names. "+
+			"Supported values are tls package constants names (e.g. CurveP256), please see "+
+			"https://pkg.go.dev/crypto/tls#CurveID")
 
 	klog.InitFlags(nil)
 
@@ -107,9 +109,15 @@ func main() {
 
 	ctrl.SetLogger(klog.NewKlogr())
 
+	flagsTLSOpts, err := config.ParseTLSOptions(tlsMinVersionRaw, tlsCipherSuitesRaw, tlsCurvePreferencesRaw)
+	if err != nil {
+		setupLog.Error(err, "unable to parse TLS options")
+		os.Exit(1)
+	}
+
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
-	// prevent from being vulnerable to the HTTP/2 Stream Cancelation and
+	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
 	// Rapid Reset CVEs. For more information see:
 	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
 	// - https://github.com/advisories/GHSA-4374-p667-p6c8
@@ -118,7 +126,7 @@ func main() {
 		c.NextProtos = []string{"http/1.1"}
 	}
 
-	tlsOpts := []func(*tls.Config){}
+	tlsOpts := []func(*tls.Config){flagsTLSOpts}
 	if !enableHTTP2 {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
