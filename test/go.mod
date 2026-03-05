@@ -1,8 +1,6 @@
 module github.com/kubevirt/ipam-extensions/test
 
-go 1.22.0
-
-toolchain go1.22.3
+go 1.25.0
 
 require (
 	github.com/k8snetworkplumbingwg/ipamclaims v0.4.0-alpha
