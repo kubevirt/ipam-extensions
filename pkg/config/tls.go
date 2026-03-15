@@ -68,9 +68,6 @@ func ParseTLSOptions(
 	}
 
 	cipherSuiteNames := parseStringSlice(tlsCipherSuitesRaw)
-	if err := validateSafeCipherSuite(cipherSuiteNames); err != nil {
-		return nil, err
-	}
 	if err := validateTLSVersionConfigurableCiphers(tlsMinVersion, cipherSuiteNames); err != nil {
 		return nil, err
 	}
@@ -108,15 +105,6 @@ func toTLSVersion(tlsVersionName string) (uint16, error) {
 		return 0, fmt.Errorf("TLS version not found for %q", tlsVersionName)
 	}
 	return tlsVersion, nil
-}
-
-func validateSafeCipherSuite(cipherSuiteNames []string) error {
-	for _, cipherSuiteName := range cipherSuiteNames {
-		if _, exist := indexedInsecureCipherSuiteNames[cipherSuiteName]; exist {
-			return fmt.Errorf("using insecure cipher suite %q is not allowed", cipherSuiteName)
-		}
-	}
-	return nil
 }
 
 func validateTLSVersionConfigurableCiphers(versionID uint16, cipherSuiteNames []string) error {
