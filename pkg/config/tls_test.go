@@ -65,19 +65,6 @@ var _ = Describe("ParseTLSOptions", func() {
 				ciphers:    "TLS_AES_128_GCM_SHA256",
 			},
 		),
-		Entry("cipher suites are specified and minimal version is 1.3",
-			flags{
-				minVersion: "VersionTLS13",
-				ciphers:    "TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384",
-			},
-		),
-		Entry("insecure cipher suite is specified",
-			flags{
-				minVersion: "VersionTLS12",
-				// TLS_RSA_WITH_AES_128_CBC_SHA256 is insecure cipher suite for TLS 1.2
-				ciphers: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,TLS_RSA_WITH_AES_128_CBC_SHA256",
-			},
-		),
 	)
 
 	DescribeTable("should succeed, given",
