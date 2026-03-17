@@ -88,7 +88,8 @@ func main() {
 		"Supported values are tls package constants names (e.g. VersionTLS13), please see "+
 		"https://pkg.go.dev/crypto/tls#pkg-constants")
 	flag.StringVar(&tlsCipherSuitesRaw, "tls-cipher-suites", "",
-		"Comma-separated list of TLS cipher suite names (OpenSSL names. E.g: TLS_AES_128_GCM_SHA256).")
+		"Comma-separated list of TLS cipher suite names (OpenSSL names. E.g: TLS_AES_128_GCM_SHA256)."+
+			"When 'min-tls-version' is 'VersionTLS13', cipher suites are selected by the runtime.")
 	flag.StringVar(&tlsCurvePreferencesRaw, "tls-curve-preferences", "",
 		"Comma-separated list of TLS curve preference names. "+
 			"Supported values are tls package constants names (e.g. CurveP256), please see "+
