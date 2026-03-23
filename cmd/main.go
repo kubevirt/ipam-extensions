@@ -84,18 +84,20 @@ func main() {
 	flag.StringVar(&certDir, "certificates-dir", "", "Specify the certificates directory for the webhook server")
 	flag.StringVar(&defaultNetworkNadNamespace, "default-network-nad-namespace", "ovn-kubernetes",
 		"Define the namespace where the NAD to override the default network is located")
-	flag.StringVar(&tlsMinVersionRaw, "tls-min-version", "VersionTLS13", "Minimum TLS version. "+
-		"Supported values are tls package constants names (e.g. VersionTLS13), please see "+
-		"https://pkg.go.dev/crypto/tls#pkg-constants")
-	flag.StringVar(&tlsCipherSuitesRaw, "tls-cipher-suites", "",
-		"Comma-separated list of TLS cipher suite names."+
-			"Supported values are tls package constants names (e.g. TLS_AES_128_GCM_SHA256), please see "+
-			"https://pkg.go.dev/crypto/tls#pkg-constants"+
-			"When 'min-tls-version' is 'VersionTLS13', cipher suites are selected by the runtime.")
+	flag.StringVar(&tlsMinVersionRaw, "tls-min-version", "VersionTLS13", `Minimum TLS version
+Supported values are tls package constants names (e.g. VersionTLS12)
+please see https://pkg.go.dev/crypto/tls#pkg-constants.`,
+	)
+	flag.StringVar(&tlsCipherSuitesRaw, "tls-cipher-suites", "", `Comma-separated list of TLS cipher suite names.
+Supported values are tls package constants names (e.g. TLS_AES_128_GCM_SHA256)
+please see https://pkg.go.dev/crypto/tls#pkg-constants.
+When 'min-tls-version' is 'VersionTLS13', cipher suites are selected by the runtime.`,
+	)
 	flag.StringVar(&tlsCurvePreferencesRaw, "tls-curve-preferences", "",
-		"Comma-separated list of TLS curve preference names. "+
-			"Supported values are tls package constants names (e.g. CurveP256), please see "+
-			"https://pkg.go.dev/crypto/tls#CurveID")
+		`Comma-separated list of TLS curve preference names.
+Supported values are tls package constants names (e.g. CurveP256)
+please see https://pkg.go.dev/crypto/tls#CurveID`,
+	)
 
 	klog.InitFlags(nil)
 
