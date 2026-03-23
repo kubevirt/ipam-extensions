@@ -84,7 +84,7 @@ func main() {
 	flag.StringVar(&certDir, "certificates-dir", "", "Specify the certificates directory for the webhook server")
 	flag.StringVar(&defaultNetworkNadNamespace, "default-network-nad-namespace", "ovn-kubernetes",
 		"Define the namespace where the NAD to override the default network is located")
-	flag.StringVar(&tlsMinVersionRaw, "tls-min-version", "", "Minimum TLS version. "+
+	flag.StringVar(&tlsMinVersionRaw, "tls-min-version", "VersionTLS13", "Minimum TLS version. "+
 		"Supported values are tls package constants names (e.g. VersionTLS13), please see "+
 		"https://pkg.go.dev/crypto/tls#pkg-constants")
 	flag.StringVar(&tlsCipherSuitesRaw, "tls-cipher-suites", "",
