@@ -45,35 +45,9 @@ function ensure_kind() {
 	chmod +x ${KIND_BIN}
 }
 
-function patch_ovnk_local_registry() {
-    # OVNK's kind.yaml.j2 uses deprecated containerdConfigPatches with
-    # registry.mirrors, silently ignored by containerd 2.x.
-    # Remove that block (note: upstream template has typo "registy").
-    sed -i '/use_local_regist.*true/,/{%- endif %}/d' \
-        ${OVN_KUBERNETES_DIR}/contrib/kind.yaml.j2
-
-    # Inject hosts.toml setup into OVNK's connect_local_registry(), which
-    # runs after cluster creation but before OVN image install/deploy.
-    local patch_file
-    patch_file=$(mktemp)
-    cat > "${patch_file}" <<'ENDPATCH'
-
-    # Configure containerd hosts.toml for the local registry (containerd 2.x)
-    local registry_dir="/etc/containerd/certs.d/localhost:${KIND_LOCAL_REGISTRY_PORT}"
-    for node in $(kind get nodes --name "${KIND_CLUSTER_NAME}"); do
-        docker exec "${node}" mkdir -p "${registry_dir}"
-        docker exec "${node}" sh -c \
-            "printf '[host.\"http://${KIND_LOCAL_REGISTRY_NAME}:5000\"]\n' > ${registry_dir}/hosts.toml"
-    done
-ENDPATCH
-    sed -i '/^EOF$/r '"${patch_file}" ${OVN_KUBERNETES_DIR}/contrib/kind.sh
-    rm -f "${patch_file}"
-}
-
 function up() {
     mkdir -p ${OUTPUT_DIR}
     ensure_ovn_kubernetes
-    patch_ovnk_local_registry
     ensure_kind
     kind delete cluster --name $cluster_name
     (
