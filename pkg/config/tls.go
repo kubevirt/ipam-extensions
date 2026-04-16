@@ -47,6 +47,9 @@ func init() {
 	for _, cipherSuite := range tls.CipherSuites() {
 		tlsCipherSuiteIDByName[cipherSuite.Name] = cipherSuite.ID
 	}
+	for _, cipherSuite := range tls.InsecureCipherSuites() {
+		tlsCipherSuiteIDByName[cipherSuite.Name] = cipherSuite.ID
+	}
 }
 
 func ParseTLSOptions(
