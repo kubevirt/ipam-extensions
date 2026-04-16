@@ -43,15 +43,9 @@ var tlsCurveIDByName = map[string]tls.CurveID{
 
 var tlsCipherSuiteIDByName = map[string]uint16{}
 
-var indexedInsecureCipherSuiteNames = map[string]struct{}{}
-
 func init() {
 	for _, cipherSuite := range tls.CipherSuites() {
 		tlsCipherSuiteIDByName[cipherSuite.Name] = cipherSuite.ID
-	}
-
-	for _, insecureCipherSuite := range tls.InsecureCipherSuites() {
-		indexedInsecureCipherSuiteNames[insecureCipherSuite.Name] = struct{}{}
 	}
 }
 
