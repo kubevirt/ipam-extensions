@@ -59,6 +59,11 @@
           "source": "^// \\+kubebuilder"
         }
       ]
+    },
+    "settings": {
+      "lll": {
+        "line-length": 120
+      }
     }
   },
   "run": {
