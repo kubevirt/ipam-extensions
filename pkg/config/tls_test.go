@@ -18,6 +18,7 @@ package config_test
 
 import (
 	"crypto/tls"
+	"log"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -38,9 +39,11 @@ type flags struct {
 }
 
 var _ = Describe("ParseTLSOptions", func() {
+	var logger = log.Default().Printf
+
 	DescribeTable("should fail, given",
 		func(i flags) {
-			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves)
+			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves, logger)
 			Expect(err).To(HaveOccurred())
 			Expect(optsFn).To(BeNil())
 		},
@@ -69,7 +72,7 @@ var _ = Describe("ParseTLSOptions", func() {
 
 	DescribeTable("should succeed, given",
 		func(i flags, expectedTLSConf *tls.Config) {
-			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves)
+			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves, logger)
 			Expect(err).ToNot(HaveOccurred())
 			testTlsConfig := &tls.Config{}
 			optsFn(testTlsConfig)

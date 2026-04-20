@@ -56,6 +56,7 @@ func ParseTLSOptions(
 	tlsMinVersionRaw string,
 	tlsCipherSuitesRaw string,
 	tlsCurvePreferencesRaw string,
+	logger func(string, ...any),
 ) (
 	func(*tls.Config),
 	error,
@@ -69,6 +70,9 @@ func ParseTLSOptions(
 	cipherSuiteIDs, err := toCipherSuiteIDs(cipherSuiteNames)
 	if err != nil {
 		return nil, err
+	}
+	for _, cipherSuiteID := range cipherSuiteIDs {
+		logger("WARNING: insecure TLS cipher suite is being used:", tls.CipherSuiteName(cipherSuiteID))
 	}
 
 	curvePreferenceNames := parseStringSlice(tlsCurvePreferencesRaw)

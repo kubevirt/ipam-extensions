@@ -114,7 +114,12 @@ please see https://pkg.go.dev/crypto/tls#CurveID`,
 
 	ctrl.SetLogger(klog.NewKlogr())
 
-	flagsTLSOpts, err := config.ParseTLSOptions(tlsMinVersionRaw, tlsCipherSuitesRaw, tlsCurvePreferencesRaw)
+	flagsTLSOpts, err := config.ParseTLSOptions(
+		tlsMinVersionRaw,
+		tlsCipherSuitesRaw,
+		tlsCurvePreferencesRaw,
+		setupLog.Info,
+	)
 	if err != nil {
 		setupLog.Error(err, "unable to parse TLS options")
 		os.Exit(1)
