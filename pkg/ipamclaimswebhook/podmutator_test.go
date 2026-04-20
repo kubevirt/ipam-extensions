@@ -376,15 +376,13 @@ var _ = Describe("KubeVirt IPAM launcher pod mutato machine", Serial, func() {
 	)
 
 	It("should allow UPDATE operations even with multus default network annotation", func() {
-		var initialObjects []client.Object
-
 		vm := dummyVM(nadName)
 		vmi := dummyVMI(nadName, WithIPRequests("podnet", "192.168.1.10", "fd20:1234::200"))
 		nad := dummyPrimaryNetworkNAD(nadName)
 		pod := dummyPodForVMWithAnnotation("", vmName,
 			map[string]string{config.MultusDefaultNetAnnotation: "[{\"name\":\"podnet\"}]"})
 
-		initialObjects = append(initialObjects, vm, vmi, nad)
+		initialObjects := []client.Object{vm, vmi, nad}
 
 		ctrlOptions := controllerruntime.Options{
 			Scheme: scheme.Scheme,
