@@ -1,0 +1,17 @@
+code_review:
+  comment_severity_threshold: MEDIUM
+  pull_request_guidelines:
+    - file: .gemini/styleguide.md
+  pull_request_opened:
+    help: true
+    summary: true
+
+  ignore_patterns:
+    - "vendor/**"
+    - "dist/**"
+    - "bin/**"
+    - "config/**"
+    - ".output/**"
+    - "**/*.pb.go"
+    - "**/*_generated.go"
+    - "**/*zz_generated*.go"
