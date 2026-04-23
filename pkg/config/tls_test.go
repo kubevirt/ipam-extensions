@@ -18,6 +18,7 @@ package config_test
 
 import (
 	"crypto/tls"
+	"log"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -38,9 +39,11 @@ type flags struct {
 }
 
 var _ = Describe("ParseTLSOptions", func() {
+	var logger = log.Default().Printf
+
 	DescribeTable("should fail, given",
 		func(i flags) {
-			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves)
+			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves, logger)
 			Expect(err).To(HaveOccurred())
 			Expect(optsFn).To(BeNil())
 		},
@@ -69,7 +72,7 @@ var _ = Describe("ParseTLSOptions", func() {
 
 	DescribeTable("should succeed, given",
 		func(i flags, expectedTLSConf *tls.Config) {
-			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves)
+			optsFn, err := config.ParseTLSOptions(i.minVersion, i.ciphers, i.curves, logger)
 			Expect(err).ToNot(HaveOccurred())
 			testTlsConfig := &tls.Config{}
 			optsFn(testTlsConfig)
@@ -83,6 +86,10 @@ var _ = Describe("ParseTLSOptions", func() {
 		Entry("cipher suites",
 			flags{ciphers: "TLS_AES_128_GCM_SHA256"},
 			&tls.Config{CipherSuites: []uint16{tls.TLS_AES_128_GCM_SHA256}},
+		),
+		Entry("insecure cipher suite",
+			flags{ciphers: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"},
+			&tls.Config{CipherSuites: []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256}},
 		),
 		Entry("curve preferences",
 			flags{curves: "X25519"},
