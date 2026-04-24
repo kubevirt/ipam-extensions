@@ -6,28 +6,24 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-linters-unit-tests:
+  build:
+    name: Build & Verify Manifests
     runs-on: ubuntu-latest
     steps:
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v5
       with:
         go-version-file: 'go.mod'
+        cache: true
 
     - name: Check vendoring
       run: make check-vendoring
 
     - name: Build
       run: time make
-
-    - name: Linters
-      uses: golangci/golangci-lint-action@v9
-      with:
-        version: v2.11.4
-        args: --timeout 3m --verbose cmd/... pkg/...
 
     - name: Sanitize branch name for container image tag
       shell: bash
@@ -49,18 +45,84 @@ jobs:
           exit 1
         fi
 
-    - name: Test
-      run: ENVTEST_VERSION="release-0.20" make test
-  e2e:
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v5
       with:
         go-version-file: 'go.mod'
+        cache: true
+
+    - name: Linters
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.11.4
+        args: --timeout 3m --verbose cmd/... pkg/...
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+        cache: true
+
+    - name: Test
+      run: ENVTEST_VERSION="release-0.20" make test
+
+  commit-lint:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Validate PR commits follow conventional format
+      run: |
+        COMMITS=$(git log --no-merges --format='%s' origin/${{ github.base_ref }}..${{ github.sha }})
+        PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+'
+        FAILED=0
+        while IFS= read -r msg; do
+          if [ -z "$msg" ]; then
+            continue
+          fi
+          if ! echo "$msg" | grep -qE "$PATTERN"; then
+            echo "Non-conventional commit: $msg"
+            FAILED=1
+          fi
+        done <<< "$COMMITS"
+        if [ "$FAILED" -eq 1 ]; then
+          echo ""
+          echo "Commits must follow conventional format: type(scope): description"
+          echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+          exit 1
+        fi
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+        cache: true
 
     - name: Free up disk space
       run: |
@@ -84,8 +146,8 @@ jobs:
     - name: Run e2e tests
       run: make test-e2e
 
-    - uses: actions/upload-artifact@v4  # upload test results
-      if: success() || failure()        # run this step even if previous step failed
+    - uses: actions/upload-artifact@v4
+      if: success() || failure()
       with:
         name: test-e2e-results
         path: .output/*.xml

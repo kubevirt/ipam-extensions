@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: KubeVirt Community
+    url: https://github.com/kubevirt/kubevirt
+    about: For general KubeVirt questions and discussions
