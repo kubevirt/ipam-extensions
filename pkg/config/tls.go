@@ -33,7 +33,7 @@ var tlsVersionByName = map[string]uint16{
 	"VersionTLS11": tls.VersionTLS11,
 	"VersionTLS10": tls.VersionTLS10,
 }
-var tlsCurveIDByName = map[string]tls.CurveID{
+var tlsGroupIDByName = map[string]tls.CurveID{
 	"X25519":         tls.X25519,
 	"CurveP256":      tls.CurveP256,
 	"CurveP384":      tls.CurveP384,
@@ -55,7 +55,7 @@ func init() {
 func ParseTLSOptions(
 	tlsMinVersionRaw string,
 	tlsCipherSuitesRaw string,
-	tlsCurvePreferencesRaw string,
+	tlsGroupPreferencesRaw string,
 	logger func(string, ...any),
 ) (
 	func(*tls.Config),
@@ -75,8 +75,8 @@ func ParseTLSOptions(
 		logger("WARNING: insecure TLS cipher suite is being used:", tls.CipherSuiteName(cipherSuiteID))
 	}
 
-	curvePreferenceNames := parseStringSlice(tlsCurvePreferencesRaw)
-	curvePreferenceIDs, err := toCurveIDs(curvePreferenceNames)
+	groupPreferenceNames := parseStringSlice(tlsGroupPreferencesRaw)
+	groupPreferenceIDs, err := toGroupIDs(groupPreferenceNames)
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +88,9 @@ func ParseTLSOptions(
 		if len(cipherSuiteIDs) > 0 {
 			c.CipherSuites = cipherSuiteIDs
 		}
-		if len(curvePreferenceIDs) > 0 {
-			c.CurvePreferences = curvePreferenceIDs
+		if len(groupPreferenceIDs) > 0 {
+			// although the legacy name, CurvePreferences supports non elliptic-curve key-exchange mechanisms.
+			c.CurvePreferences = groupPreferenceIDs
 		}
 	}
 	return tlsOpts, nil
@@ -114,10 +115,10 @@ func toCipherSuiteIDs(cipherSuiteNames []string) ([]uint16, error) {
 	return ids, nil
 }
 
-func toCurveIDs(curveNames []string) ([]tls.CurveID, error) {
-	ids, err := getValuesByKeys(tlsCurveIDByName, curveNames)
+func toGroupIDs(groupNames []string) ([]tls.CurveID, error) {
+	ids, err := getValuesByKeys(tlsGroupIDByName, groupNames)
 	if err != nil {
-		return nil, fmt.Errorf("unable to find curve preference IDs: %w", err)
+		return nil, fmt.Errorf("unable to find group preference IDs: %w", err)
 	}
 	return ids, nil
 }

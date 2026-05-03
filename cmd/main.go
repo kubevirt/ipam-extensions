@@ -74,7 +74,7 @@ func main() {
 	var defaultNetworkNadNamespace string
 	var tlsMinVersionRaw string
 	var tlsCipherSuitesRaw string
-	var tlsCurvePreferencesRaw string
+	var tlsGroupPreferencesRaw string
 
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. "+
@@ -93,9 +93,9 @@ Supported values are tls package constants names (e.g. TLS_AES_128_GCM_SHA256)
 please see https://pkg.go.dev/crypto/tls#pkg-constants.
 When 'min-tls-version' is 'VersionTLS13', cipher suites are selected by the runtime.`,
 	)
-	flag.StringVar(&tlsCurvePreferencesRaw, "tls-curve-preferences", "",
-		`Comma-separated list of TLS curve preference names.
-Supported values are tls package constants names (e.g. CurveP256)
+	flag.StringVar(&tlsGroupPreferencesRaw, "tls-group-preferences", "",
+		`Comma-separated list of TLS group preference names.
+Supported values are tls package constants names (e.g. X25519MLKEM768, CurveP256)
 please see https://pkg.go.dev/crypto/tls#CurveID`,
 	)
 
@@ -117,7 +117,7 @@ please see https://pkg.go.dev/crypto/tls#CurveID`,
 	flagsTLSOpts, err := config.ParseTLSOptions(
 		tlsMinVersionRaw,
 		tlsCipherSuitesRaw,
-		tlsCurvePreferencesRaw,
+		tlsGroupPreferencesRaw,
 		setupLog.Info,
 	)
 	if err != nil {
