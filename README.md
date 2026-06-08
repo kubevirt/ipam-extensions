@@ -1,4 +1,9 @@
 # kubevirt-ipam-controller
+
+[![Checks](https://github.com/kubevirt/ipam-extensions/actions/workflows/checks.yaml/badge.svg)](https://github.com/kubevirt/ipam-extensions/actions/workflows/checks.yaml)
+[![Nightly E2E](https://github.com/kubevirt/ipam-extensions/actions/workflows/nightly.yaml/badge.svg)](https://github.com/kubevirt/ipam-extensions/actions/workflows/nightly.yaml)
+[![Security Scanning](https://github.com/kubevirt/ipam-extensions/actions/workflows/security.yaml/badge.svg)](https://github.com/kubevirt/ipam-extensions/actions/workflows/security.yaml)
+
 This repo provide a KubeVirt extension to create (and manage the lifecycle of)
 `IPAMClaim`s on behalf of KubeVirt virtual machines.
 
