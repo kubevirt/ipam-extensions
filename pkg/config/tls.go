@@ -42,6 +42,7 @@ var tlsGroupIDByName = map[string]tls.CurveID{
 }
 
 var tlsCipherSuiteIDByName = map[string]uint16{}
+var insecureCipherSuiteNameByIDs = map[uint16]string{}
 
 func init() {
 	for _, cipherSuite := range tls.CipherSuites() {
@@ -49,6 +50,7 @@ func init() {
 	}
 	for _, cipherSuite := range tls.InsecureCipherSuites() {
 		tlsCipherSuiteIDByName[cipherSuite.Name] = cipherSuite.ID
+		insecureCipherSuiteNameByIDs[cipherSuite.ID] = cipherSuite.Name
 	}
 }
 
@@ -72,7 +74,9 @@ func ParseTLSOptions(
 		return nil, err
 	}
 	for _, cipherSuiteID := range cipherSuiteIDs {
-		logger("WARNING: insecure TLS cipher suite is being used:", tls.CipherSuiteName(cipherSuiteID))
+		if cipherName, exist := insecureCipherSuiteNameByIDs[cipherSuiteID]; exist {
+			logger("WARNING: insecure TLS cipher suite is being used: %q", cipherName)
+		}
 	}
 
 	groupPreferenceNames := parseStringSlice(tlsGroupPreferencesRaw)
