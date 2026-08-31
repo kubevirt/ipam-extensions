@@ -34,11 +34,13 @@ var tlsVersionByName = map[string]uint16{
 	"VersionTLS10": tls.VersionTLS10,
 }
 var tlsGroupIDByName = map[string]tls.CurveID{
-	"X25519":         tls.X25519,
-	"CurveP256":      tls.CurveP256,
-	"CurveP384":      tls.CurveP384,
-	"CurveP521":      tls.CurveP521,
-	"X25519MLKEM768": tls.X25519MLKEM768,
+	"X25519":             tls.X25519,
+	"CurveP256":          tls.CurveP256,
+	"CurveP384":          tls.CurveP384,
+	"CurveP521":          tls.CurveP521,
+	"X25519MLKEM768":     tls.X25519MLKEM768,
+	"SecP256r1MLKEM768":  tls.SecP256r1MLKEM768,
+	"SecP384r1MLKEM1024": tls.SecP384r1MLKEM1024,
 }
 
 var tlsCipherSuiteIDByName = map[string]uint16{}
