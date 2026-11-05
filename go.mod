@@ -2,7 +2,7 @@ module github.com/kubevirt/ipam-extensions
 
 go 1.26.0
 
-toolchain go1.26.6
+toolchain go1.26.9
 
 require (
 	github.com/go-logr/logr v1.4.2
