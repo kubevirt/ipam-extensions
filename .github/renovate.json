@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "schedule:weekly",
+    ":enableVulnerabilityAlerts",
+    ":gitSignOff"
+  ],
+  "enabledManagers": ["gomod", "github-actions"],
+  "postUpdateOptions": ["gomodTidyAll"],
+  "automerge": false,
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod"],
+      "postUpdateOptions": ["gomodTidyAll", "gomodVendor"]
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["test/go.mod"],
+      "postUpdateOptions": ["gomodTidyAll", "gomodSkipVendor"],
+      "addLabels": ["test"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "addLabels": ["ci"]
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod"],
+      "matchPackageNames": ["k8s.io/**", "sigs.k8s.io/**"],
+      "groupName": "k8s"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod"],
+      "matchPackageNames": ["kubevirt.io/**"],
+      "groupName": "kubevirt"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "addLabels": ["security"],
+    "schedule": []
+  },
+  "semanticCommits": "enabled",
+  "prConcurrentLimit": 5,
+  "prBodyNotes": ["```release-note\nNONE\n```"]
+}

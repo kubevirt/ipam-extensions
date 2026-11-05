@@ -26,6 +26,24 @@ respectively.
 The [OVN-Kubernetes CNI](https://github.com/ovn-org/ovn-kubernetes) is a CNI
 that implements this IPAM multi-network standard.
 
+## Dependency Updates
+
+Renovate replaces Dependabot for weekly Go module and GitHub Actions updates.
+The configuration is in [`.github/renovate.json`](.github/renovate.json).
+Updates run `go mod tidy` with `gomodTidyAll`; root module updates also run
+`go mod vendor`, matching `make vendor` and CI's `make check-vendoring`.
+The separate `test` module remains unvendored. Existing dependency labels and
+root Kubernetes/KubeVirt dependency groups are retained. Pull requests require
+maintainer review and merge; automerge is disabled.
+
+Activation requires a repository administrator to install or authorize the
+[Renovate GitHub App](https://docs.renovatebot.com/getting-started/installing-onboarding/)
+for this repository. No Renovate Actions workflow is needed for the hosted app.
+GitHub Dependabot alerts must also be enabled and accessible to Renovate for
+vulnerability fixes, which bypass the weekly schedule and add the `security` label.
+Dependabot security updates should be disabled when Renovate takes over to avoid
+duplicate security pull requests; Dependabot alerts should remain enabled.
+
 ## Getting Started
 
 ### Prerequisites
@@ -42,8 +60,8 @@ that implements this IPAM multi-network standard.
 make docker-build docker-push IMG=<some-registry>/ipam-controller:<tag>
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified. 
-And it is required to have access to pull the image from the working environment. 
+**NOTE:** This image ought to be published in the personal registry you specified.
+And it is required to have access to pull the image from the working environment.
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
@@ -52,7 +70,7 @@ Make sure you have the proper permission to the registry if the above commands d
 make deploy IMG=<some-registry>/ipam-controller:<tag>
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
 **UnDeploy the controller from the cluster:**
@@ -190,4 +208,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
