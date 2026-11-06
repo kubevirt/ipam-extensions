@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.12
-// +build go1.12
-
-package impl
-
-import "reflect"
-
-func mapRange(v reflect.Value) *reflect.MapIter { return v.MapRange() }
+// Package event provides a set of packages that cover the main
+// concepts of telemetry in an implementation agnostic way.
+package event
