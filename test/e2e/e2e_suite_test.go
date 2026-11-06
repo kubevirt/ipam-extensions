@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,20 +35,23 @@ import (
 	testenv "github.com/kubevirt/ipam-extensions/test/env"
 )
 
-const logsDir = "_output" // ./test/e2e/_output
+var logsDir string // ./test/e2e/_output/run-<UTC timestamp>-<unique suffix>
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	const outputDir = "_output"
+	Expect(os.MkdirAll(outputDir, 0755)).To(Succeed())
+	runDir, err := os.MkdirTemp(outputDir, time.Now().UTC().Format("run-20060102T150405Z-"))
+	Expect(err).NotTo(HaveOccurred())
+	return []byte(runDir)
+}, func(runDir []byte) {
+	logsDir = string(runDir)
+	GinkgoWriter.Printf("Test artifacts: %s\n", logsDir)
 	ctrl.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	testenv.Start()
 })
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
-	os.RemoveAll(logsDir)
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
-		panic(fmt.Sprintf("Error creating directory: %v", err))
-	}
-
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "kubevirt-ipam-controller e2e suite")
 }

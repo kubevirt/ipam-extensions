@@ -47,10 +47,11 @@ func ComposeAlpineWithMultusVMI(namespace, interfaceName, networkName string) *k
 			Domain: kubevirtv1.DomainSpec{
 				Resources: kubevirtv1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("128Mi"),
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
 					},
 				},
 				Devices: kubevirtv1.Devices{
+					Rng: &kubevirtv1.Rng{},
 					Disks: []kubevirtv1.Disk{
 						{
 							DiskDevice: kubevirtv1.DiskDevice{
@@ -60,6 +61,15 @@ func ComposeAlpineWithMultusVMI(namespace, interfaceName, networkName string) *k
 							},
 							Name: "containerdisk",
 						},
+						{
+							DiskDevice: kubevirtv1.DiskDevice{
+								Disk: &kubevirtv1.DiskTarget{
+									Bus: kubevirtv1.DiskBusVirtio,
+								},
+							},
+							Name: "cloudinit",
+						},
+
 					},
 					Interfaces: []kubevirtv1.Interface{
 						{
@@ -87,7 +97,15 @@ func ComposeAlpineWithMultusVMI(namespace, interfaceName, networkName string) *k
 					Name: "containerdisk",
 					VolumeSource: kubevirtv1.VolumeSource{
 						ContainerDisk: &kubevirtv1.ContainerDiskSource{
-							Image: "quay.io/kubevirtci/alpine-container-disk-demo:devel_alt",
+							Image: "quay.io/kubevirtci/alpine-with-test-tooling-container-disk:2610281201-07f30f53-amd64",
+						},
+					},
+				},
+				{
+					Name: "cloudinit",
+					VolumeSource: kubevirtv1.VolumeSource{
+						CloudInitNoCloud: &kubevirtv1.CloudInitNoCloudSource{
+							UserData: "#!/bin/bash\necho 'hello'\n",
 						},
 					},
 				},
