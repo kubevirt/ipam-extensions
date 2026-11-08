@@ -8,7 +8,7 @@ import (
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 )
 
-// IPAMClaimReconciler observes IPAMClaims without modifying them.
+// IPAMClaimReconciler releases orphaned terminating IPAMClaims.
 type IPAMClaimReconciler struct {
 	manager controllerruntime.Manager
 }
@@ -22,7 +22,11 @@ func (r *IPAMClaimReconciler) Reconcile(
 	request controllerruntime.Request,
 ) (controllerruntime.Result, error) {
 	controllerruntime.LoggerFrom(ctx).Info("Observed IPAMClaim", "claim", request.NamespacedName)
-	return controllerruntime.Result{}, nil
+	return controllerruntime.Result{}, releaseOrphanClaim(
+		ctx,
+		r.manager.GetClient(),
+		request.NamespacedName,
+	)
 }
 
 func (r *IPAMClaimReconciler) Setup() error {
