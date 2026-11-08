@@ -558,7 +558,7 @@ func logFailure(failureCount int, namespace string) {
 	logCommand([]string{"get", "net-attach-def", "-A", "-oyaml"}, "network-attachments", failureCount)
 	logCommand([]string{"get", "namespaces", "-A", "-oyaml"}, "namespaces", failureCount)
 	logCommand([]string{"get", "pods", "-n", namespace, "-oyaml"}, "pods-on-test-namespace", failureCount)
-	logOvnPods(failureCount)
+	logOvnPods(logsDir, failureCount)
 }
 
 func primaryUDNNamespaceLabels() map[string]string {

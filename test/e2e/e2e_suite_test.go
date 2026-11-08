@@ -53,13 +53,17 @@ func TestE2E(t *testing.T) {
 }
 
 func logCommand(args []string, topic string, failureCount int) {
+	logCommandTo(logsDir, args, topic, failureCount)
+}
+
+func logCommandTo(dir string, args []string, topic string, failureCount int) {
 	stdout, stderr, err := kubectl(args...)
 	if err != nil {
 		fmt.Printf("Error running command kubectl %v, err %v, stderr %s\n", args, err, stderr)
 		return
 	}
 
-	fileName := fmt.Sprintf(logsDir+"/%d_%d_%s.log", GinkgoParallelProcess(), failureCount, topic)
+	fileName := fmt.Sprintf(dir+"/%d_%d_%s.log", GinkgoParallelProcess(), failureCount, topic)
 	file, err := os.Create(fileName)
 	if err != nil {
 		fmt.Printf("Error running command %v, err %v\n", args, err)
@@ -70,7 +74,7 @@ func logCommand(args []string, topic string, failureCount int) {
 	fmt.Fprint(file, fmt.Sprintf("kubectl %s\n%s\n", strings.Join(args, " "), stdout))
 }
 
-func logOvnPods(failureCount int) {
+func logOvnPods(dir string, failureCount int) {
 	args := []string{"get", "pods", "-n", "ovn-kubernetes", "--no-headers", "-o=custom-columns=NAME:.metadata.name"}
 	ovnK8sPods, stderr, err := kubectl(args...)
 	if err != nil {
@@ -90,7 +94,7 @@ func logOvnPods(failureCount int) {
 		for _, pc := range podContainers {
 			if strings.HasPrefix(pod, pc.PodPrefix) {
 				for _, container := range pc.Containers {
-					logCommand([]string{"logs", "-n", "ovn-kubernetes", pod, "-c", container}, pod+"_"+container, failureCount)
+					logCommandTo(dir, []string{"logs", "-n", "ovn-kubernetes", pod, "-c", container}, pod+"_"+container, failureCount)
 				}
 			}
 		}
