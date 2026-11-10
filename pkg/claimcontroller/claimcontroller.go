@@ -70,6 +70,12 @@ func (r *IPAMClaimReconciler) ReconcileAll(ctx context.Context) error {
 					orphanClaims = append(orphanClaims, vmClaim)
 				}
 			}
+			if owner.UID != vm.UID {
+				// claim has owner reference to a VM who has been deleted and created
+				// skipping the controller reconciliation. release the claim to enable
+				// the controller reconcile the state
+				orphanClaims = append(orphanClaims, vmClaim)
+			}
 		}
 	}
 	for _, orphanClaim := range orphanClaims {
