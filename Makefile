@@ -67,6 +67,9 @@ vet: ## Run go vet against code.
 vendor:
 	go mod tidy
 	go mod vendor
+	cd test
+	go mod tidy
+	go mod vendor
 
 .PHONY: check-vendoring
 check-vendoring: vendor fmt vet
@@ -174,7 +177,7 @@ KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.20.1
 ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v2.15.0
-GINKGO_VERSION ?= v2.22.0
+GINKGO_VERSION ?= v2.34.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
