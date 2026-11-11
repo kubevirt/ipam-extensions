@@ -46,6 +46,7 @@ import (
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
+	"github.com/kubevirt/ipam-extensions/pkg/claimcontroller"
 	"github.com/kubevirt/ipam-extensions/pkg/config"
 	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
 	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
@@ -149,8 +150,8 @@ please see https://pkg.go.dev/crypto/tls#CurveID`,
 		webhookOptions.CertDir = certDir
 	}
 	webhookServer := webhook.NewServer(webhookOptions)
-
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
@@ -216,8 +217,23 @@ please see https://pkg.go.dev/crypto/tls#CurveID`,
 			)},
 	)
 
+	ctx := ctrl.SetupSignalHandler()
+
+	clt, err := client.New(cfg, client.Options{
+		Scheme: scheme,
+	})
+	if err != nil {
+		setupLog.Error(err, "failed to initialize client")
+		os.Exit(1)
+	}
+	claimCtrl := claimcontroller.NewClaimReconciler(clt)
+	if rerr := claimCtrl.ReconcileAll(ctx); rerr != nil {
+		setupLog.Error(rerr, "failed to initialize claim controller: failed to reconcile existing claims")
+		os.Exit(1)
+	}
+
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
