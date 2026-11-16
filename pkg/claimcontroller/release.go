@@ -51,6 +51,13 @@ func releaseOrphanClaim(ctx context.Context, ctl client.Client, key client.Objec
 		shouldRelease = true
 	}
 
+	if ownerRef.UID != ownerObj.GetUID() {
+		// claim has owner reference to a VM who has been deleted and created
+		// skipping the controller reconciliation. release the claim to enable
+		// the controller reconcile the state.
+		shouldRelease = true
+	}
+
 	if !shouldRelease {
 		// owner not exist, or exist and aligned with the owner reference
 		return nil

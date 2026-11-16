@@ -157,6 +157,31 @@ var _ = Describe("Reconcile", func() {
 		assertClaimKubevirtVMFinalizer(ctl, orangeVMKey)
 	})
 
+	It("should release terminating claim owned by a VM with UID that mismatch the actual VM UID", func() {
+		// when a VM has replaced the claim's original owner, it releases the old claim
+		// this scenario can happen when an orphan claim pointing to some VM that no longer exist
+		// and the VM is recreated with the same name. In this case the UID will mismatch.
+		ctl := newFakeClient(interceptor.Funcs{},
+			newVM(blueVMKey, "1000"),
+			newTerminatingClaim(blueVMKey, newVMOwnerRef(blueVMKey.Name, "9000")),
+			newVMI(redVMIKey, "2000"),
+			newTerminatingClaim(redVMIKey, newVMIOwnerRef(redVMIKey.Name, "8000")),
+
+			newVM(orangeVMKey, "20000"),
+			newTerminatingClaim(orangeVMKey, newVMOwnerRef(orangeVMKey.Name, "20000")),
+		)
+
+		testReconcile(ctl,
+			testData{blueVMKey, Succeed()},
+			testData{redVMIKey, Succeed()},
+			testData{orangeVMKey, Succeed()},
+		)
+
+		assertClaimAbsent(ctl, blueVMKey)
+		assertClaimAbsent(ctl, redVMIKey)
+		assertClaimKubevirtVMFinalizer(ctl, orangeVMKey)
+	})
+
 	It("should not touch finalizers other then VM persistent IPs finalizer", func() {
 		claim := newTerminatingClaim(blueVMKey, newVMOwnerRef(blueVMKey.Name, "9000"))
 		Expect(claim.Finalizers).To(ConsistOf("kubevirt.io/persistent-ipam"))
