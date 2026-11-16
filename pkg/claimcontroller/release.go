@@ -35,7 +35,7 @@ func releaseOrphanClaim(ctx context.Context, ctl client.Client, key client.Objec
 		return nil // claim is not terminating
 	}
 
-	ownerRef := getOwnerRefForVMResource(claim.OwnerReferences)
+	ownerRef := GetOwnerRefForVMResource(claim.OwnerReferences)
 	if ownerRef == nil { // not owned by a VM reference
 		return nil
 	}
@@ -72,8 +72,8 @@ func releaseOrphanClaim(ctx context.Context, ctl client.Client, key client.Objec
 	return nil
 }
 
-// getOwnerRefForVMResource return owner reference for VM resource, first occurrence found.
-func getOwnerRefForVMResource(ownerReferences []metav1.OwnerReference) *metav1.OwnerReference {
+// GetOwnerRefForVMResource return owner reference for VM resource, first occurrence found.
+func GetOwnerRefForVMResource(ownerReferences []metav1.OwnerReference) *metav1.OwnerReference {
 	i := slices.IndexFunc(ownerReferences, func(ref metav1.OwnerReference) bool {
 		return ref.APIVersion == virtv1.GroupVersion.String() &&
 			(ref.Kind == virtv1.VirtualMachineGroupVersionKind.Kind ||
