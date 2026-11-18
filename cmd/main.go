@@ -46,6 +46,7 @@ import (
 	ipamclaimsapi "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
+	"github.com/kubevirt/ipam-extensions/pkg/claimcontroller"
 	"github.com/kubevirt/ipam-extensions/pkg/config"
 	"github.com/kubevirt/ipam-extensions/pkg/ipamclaimswebhook"
 	"github.com/kubevirt/ipam-extensions/pkg/vminetworkscontroller"
@@ -190,6 +191,11 @@ please see https://pkg.go.dev/crypto/tls#CurveID`,
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+
+	if err := claimcontroller.NewClaimReconciler(mgr).Setup(); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "IPAMClaim")
 		os.Exit(1)
 	}
 
