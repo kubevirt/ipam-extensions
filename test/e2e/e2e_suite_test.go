@@ -97,6 +97,23 @@ func logOvnPods(failureCount int) {
 	}
 }
 
+func dumpManagerPodLogs(failureCount int) {
+	const managerLabel = "app=ipam-virt-workloads"
+	const managerNs = "kubevirt-ipam-controller-system"
+	args := []string{"get", "pods", "-n", managerNs, "-l", managerLabel, "--no-headers",
+		"-o=custom-columns=NAME:.metadata.name"}
+	pods, stderr, err := kubectl(args...)
+	if err != nil {
+		fmt.Printf("Error running command kubectl %v, stderr %s, err %v\n", args, stderr, err)
+		return
+	}
+	for pod := range strings.SplitSeq(pods, "\n") {
+		if pod != "" {
+			logCommand([]string{"logs", "-n", managerNs, pod}, pod, failureCount)
+		}
+	}
+}
+
 func kubectl(command ...string) (string, string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.Command(os.Getenv("KUBECTL"), command...)
