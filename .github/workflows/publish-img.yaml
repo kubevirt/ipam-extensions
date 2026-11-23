@@ -50,7 +50,7 @@ jobs:
 
       - name: Push branch-based container images
         if: github.ref_type == 'branch'
-        uses: docker/build-push-action@v5.3.0
+        uses: docker/build-push-action@v5.4.0
         with:
           context: .
           push: true
@@ -60,7 +60,7 @@ jobs:
 
       - name: Push latest container image
         if: github.ref_type == 'branch' && github.ref_name == 'main'
-        uses: docker/build-push-action@v5.3.0
+        uses: docker/build-push-action@v5.4.0
         with:
           context: .
           push: true
@@ -70,7 +70,7 @@ jobs:
 
       - name: Push stable container image
         if: github.ref_type == 'tag'
-        uses: docker/build-push-action@v5.3.0
+        uses: docker/build-push-action@v5.4.0
         with:
           context: .
           push: true
