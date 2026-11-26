@@ -20,7 +20,6 @@ import (
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -38,10 +37,6 @@ func TestController(t *testing.T) {
 	RunSpecs(t, "VMI Controller test suite")
 }
 
-var (
-	testEnv *envtest.Environment
-)
-
 type testConfig struct {
 	inputVM            *virtv1.VirtualMachine
 	inputVMI           *virtv1.VirtualMachineInstance
@@ -57,18 +52,10 @@ const dummyUID = "dummyUID"
 var _ = Describe("VMI IPAM controller", Serial, func() {
 	BeforeEach(func() {
 		log.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-		testEnv = &envtest.Environment{}
-		_, err := testEnv.Start()
-		Expect(err).NotTo(HaveOccurred())
-
 		Expect(virtv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(nadv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(ipamclaimsapi.AddToScheme(scheme.Scheme)).To(Succeed())
 		// +kubebuilder:scaffold:scheme
-	})
-
-	AfterEach(func() {
-		Expect(testEnv.Stop()).To(Succeed())
 	})
 
 	const (
